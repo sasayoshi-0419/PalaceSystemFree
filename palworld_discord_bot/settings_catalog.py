@@ -1,0 +1,1403 @@
+from __future__ import annotations
+
+import re
+from typing import Any, TypedDict
+
+PROTECTED_KEYS = frozenset({"AdminPassword", "RESTAPIEnabled", "RESTAPIPort"})
+DEFAULT_PLATFORMS = "(Steam,Xbox,PS5,Mac)"
+PLATFORM_OPTIONS = ("Steam", "Xbox", "PS5", "Mac")
+
+
+class SettingField(TypedDict, total=False):
+    key: str
+    category: str
+    label: str
+    description: str
+    kind: str
+    default: str
+    min: float
+    max: float
+    step: float
+    options: list[str]
+    option_labels: dict[str, str]
+    protected: bool
+    deprecated: bool
+    official: bool
+
+
+def _field(
+    key: str,
+    category: str,
+    description: str,
+    kind: str,
+    default: str,
+    *,
+    label: str,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    step: float | None = None,
+    options: list[str] | None = None,
+    option_labels: dict[str, str] | None = None,
+    protected: bool = False,
+    deprecated: bool = False,
+    official: bool = True,
+) -> SettingField:
+    item: SettingField = {
+        "key": key,
+        "category": category,
+        "label": label,
+        "description": description,
+        "kind": kind,
+        "default": default,
+        "protected": protected,
+        "deprecated": deprecated,
+        "official": official,
+    }
+    if min_value is not None:
+        item["min"] = min_value
+    if max_value is not None:
+        item["max"] = max_value
+    if step is not None:
+        item["step"] = step
+    if options is not None:
+        item["options"] = options
+    if option_labels is not None:
+        item["option_labels"] = option_labels
+    return item
+
+
+def _catalog() -> tuple[SettingField, ...]:
+    perf = "パフォーマンス関連"
+    server = "サーバー関連"
+    features = "ゲーム機能関連"
+    balance = "ゲームバランス関連"
+    other = "その他"
+    return (
+        _field(
+            "BaseCampMaxNum",
+            perf,
+            "サーバー全体で作れる拠点の合計数です。人数やギルドが増えると拠点も増え、処理負荷が上がります。ギルドごとの上限は BaseCampMaxNumInGuild です。",
+            "int",
+            "128",
+            label="サーバー全体の拠点数",
+            min_value=1,
+            max_value=256,
+            step=1,
+        ),
+        _field(
+            "BaseCampMaxNumInGuild",
+            perf,
+            "1ギルドが持てる拠点の上限です。デフォルトは4、最大は10です。値を大きくするほど処理負荷が増えます。",
+            "int",
+            "4",
+            label="ギルド当たりの最大拠点数",
+            min_value=1,
+            max_value=10,
+            step=1,
+        ),
+        _field(
+            "BaseCampWorkerMaxNum",
+            perf,
+            "1拠点に置ける作業パルの上限です。最大は50です。値を大きくするほど処理負荷が増えます。専用サーバーでは15のまま変わらない、という報告があります。",
+            "int",
+            "15",
+            label="拠点当たりの最大パル数",
+            min_value=1,
+            max_value=50,
+            step=1,
+        ),
+        _field(
+            "ItemContainerForceMarkDirtyInterval",
+            perf,
+            "コンテナを開いているときに、中身を強制的に同期し直す間隔（秒）です。短いほど他プレイヤーとのズレは減りますが、負荷は増えます。",
+            "float",
+            "1.000000",
+            label="コンテナ同期の頻度（秒）",
+            min_value=0,
+            max_value=60,
+            step=0.1,
+        ),
+        _field(
+            "MaxBuildingLimitNum",
+            perf,
+            "プレイヤー1人あたりの建築物数の上限です。0は無制限です。公開サーバーで無制限にすると、建築が増えて負荷が上がりやすくなります。",
+            "int",
+            "0",
+            label="プレイヤーごとの建築物数制限",
+            min_value=0,
+            max_value=10000,
+            step=1,
+        ),
+        _field(
+            "PhysicsActiveDropItemMaxNum",
+            perf,
+            "地面に落ちたアイテムのうち、物理演算をする個数の上限です。多いほど見た目は自然ですが、処理負荷が上がります。",
+            "int",
+            "100",
+            label="物理挙動するドロップ上限",
+            min_value=0,
+            max_value=5000,
+            step=1,
+        ),
+        _field(
+            "ServerReplicatePawnCullDistance",
+            perf,
+            "プレイヤーからパルを同期する距離（センチメートル）です。公式の範囲は最小5000〜最大15000です。短くすると遠くのパルが見えにくくなり、負荷は下がりやすいです。",
+            "int",
+            "15000",
+            label="Palの同期距離（cm）",
+            min_value=5000,
+            max_value=15000,
+            step=100,
+        ),
+        _field(
+            "MaxGuildsPerFrame",
+            perf,
+            "サーバーが1フレームで処理するギルド数の上限です。ギルドが多い鯖の負荷調整向けです。普段はデフォルトのままで十分です。",
+            "int",
+            "10",
+            label="1フレームあたりのギルド処理数",
+            min_value=1,
+            max_value=100,
+            step=1,
+            official=False,
+        ),
+        _field(
+            "PlayerDataPalStorageUpdateCheckTickInterval",
+            perf,
+            "プレイヤーのパルボックス（保管）データに変更がないかをサーバーが確認する間隔です。同期の不具合を調べるとき以外は、デフォルトのままで十分です。",
+            "float",
+            "1",
+            label="パルボックス更新の確認間隔",
+            min_value=0.1,
+            max_value=60,
+            step=0.1,
+            official=False,
+        ),
+        _field(
+            "AdminPassword",
+            server,
+            "ゲーム内の管理者権限と公式 REST API の認証に使うパスワードです。管理画面からは変更できません（初回セットアップのみ）。",
+            "text",
+            "",
+            label="管理者パスワード",
+            protected=True,
+        ),
+        _field(
+            "AllowConnectPlatform",
+            server,
+            "このバージョンでは使用できません。接続できるプラットフォームは CrossplayPlatforms で指定してください。",
+            "text",
+            "Steam",
+            label="接続プラットフォーム（廃止）",
+            deprecated=True,
+        ),
+        _field(
+            "bAllowClientMod",
+            server,
+            "MODを有効化しているユーザーのサーバー参加を許可するかです。オフにすると、MOD無しのクライアントだけが入れます。",
+            "bool",
+            "True",
+            label="MODクライアントの参加",
+        ),
+        _field(
+            "bEnableBuildingPlayerUIdDisplay",
+            server,
+            "建築物の上に、作ったプレイヤーのIDを表示します。誰が置いたかを確認したいときに使います。",
+            "bool",
+            "False",
+            label="建築物に作成者IDを表示",
+        ),
+        _field(
+            "BuildingNameDisplayCacheTTLSeconds",
+            server,
+            "建築物の作成者表示をサーバーが覚え直すまでの秒数です。bEnableBuildingPlayerUIdDisplay がオンのときだけ意味があります。",
+            "float",
+            "60",
+            label="建築物作成者名のキャッシュ時間（秒）",
+            min_value=1,
+            max_value=3600,
+            step=1,
+            official=False,
+        ),
+        _field(
+            "bIsShowJoinLeftMessage",
+            server,
+            "専用サーバーで、プレイヤーの参加・退出時にゲーム内メッセージを出すかどうかです。誰が入ったかの合図になります。",
+            "bool",
+            "True",
+            label="参加・退出メッセージ",
+        ),
+        _field(
+            "bIsUseBackupSaveData",
+            server,
+            "ワールドバックアップを有効にします。有効化するとディスクへの負荷が高まります。保持は 30秒×5、10分×6、1時間×12、1日×7 です。",
+            "bool",
+            "True",
+            label="ワールドバックアップ",
+        ),
+        _field(
+            "ChatPostLimitPerMinute",
+            server,
+            "1人のプレイヤーが1分間に投稿できるチャット数の上限です。下げると連投を抑えられます。",
+            "int",
+            "30",
+            label="1分あたりのチャット上限",
+            min_value=1,
+            max_value=120,
+            step=1,
+        ),
+        _field(
+            "CrossplayPlatforms",
+            server,
+            "接続を許可するプラットフォームです。デフォルトは (Steam,Xbox,PS5,Mac) です。外したプラットフォームからは入れません。PS5/Xbox はサーバー一覧経由のため、意図せず外すと友達が見つけられなくなります。",
+            "platforms",
+            DEFAULT_PLATFORMS,
+            label="クロスプレイ対象",
+        ),
+        _field(
+            "LogFormatType",
+            server,
+            "サーバーログの出力形式です。Text か Json を選びます。普段はテキスト、外部ツールで集計するときだけ JSON で十分です。",
+            "enum",
+            "Text",
+            label="ログの形式",
+            options=["Text", "Json"],
+            option_labels={"Text": "テキスト", "Json": "JSON"},
+        ),
+        _field(
+            "PublicIP",
+            server,
+            "コミュニティサーバーとして公開するときの外部IPを明示します。サーバーの待ち受けアドレスそのものは変わりません。空なら自動判定に任せます。",
+            "text",
+            "",
+            label="外部公開IP",
+        ),
+        _field(
+            "PublicPort",
+            server,
+            "コミュニティサーバーとして公開するときの外部ポートです。この設定ではサーバーの待ち受けポートは変わりません。",
+            "int",
+            "8211",
+            label="外部公開ポート",
+            min_value=1,
+            max_value=65535,
+            step=1,
+        ),
+        _field(
+            "RCONEnabled",
+            server,
+            "外部から管理コマンドを送る RCON を有効にします。この管理ツールは RCON を使いません。ポートをインターネットに開けないでください。",
+            "bool",
+            "False",
+            label="RCONを使う",
+        ),
+        _field(
+            "RCONPort",
+            server,
+            "RCON で使うポート番号です。RCONEnabled がオフなら使われません。ルーターで公開しないでください。",
+            "int",
+            "25575",
+            label="RCONポート",
+            min_value=1,
+            max_value=65535,
+            step=1,
+        ),
+        _field(
+            "RESTAPIEnabled",
+            server,
+            "公式 REST API の有効化です。この管理ツールの状態取得に使います。管理画面からは変更できません（初回セットアップのみ）。",
+            "bool",
+            "True",
+            label="REST APIを使う",
+            protected=True,
+        ),
+        _field(
+            "RESTAPIPort",
+            server,
+            "REST API の待ち受けポートです。管理画面からは変更できません（初回セットアップのみ）。ルーターで公開しないでください。",
+            "int",
+            "8212",
+            label="REST APIポート",
+            protected=True,
+            min_value=1,
+            max_value=65535,
+            step=1,
+        ),
+        _field(
+            "ServerDescription",
+            server,
+            "サーバー一覧に出る説明文です。PvE/PvP やルールを短く書くと、入る前に伝わります。",
+            "text",
+            "",
+            label="サーバー説明",
+        ),
+        _field(
+            "ServerName",
+            server,
+            "サーバー一覧に表示される名前です。PS5/Xbox は一覧から探すため、検索しやすい名前が安全です。",
+            "text",
+            "Default Palworld Server",
+            label="サーバー名",
+        ),
+        _field(
+            "ServerPassword",
+            server,
+            "サーバーに入るときに必要なパスワードです。空ならパスワードなしです。友達だけの鯖なら設定すると安心です。",
+            "text",
+            "",
+            label="参加パスワード",
+        ),
+        _field(
+            "ServerPlayerMaxNum",
+            server,
+            "サーバーに参加できる最大人数です。多いほど負荷が上がります。起動引数で上書きされることもあります。",
+            "int",
+            "32",
+            label="最大人数",
+            min_value=1,
+            max_value=32,
+            step=1,
+        ),
+        _field(
+            "AutoResetGuildTimeNoOnlinePlayers",
+            features,
+            "bAutoResetGuildNoOnlinePlayers が発動するまでのオフライン時間です。bAutoResetGuildNoOnlinePlayers が False の場合は無視されます。",
+            "float",
+            "72.000000",
+            label="ギルド自動リセットまでの時間",
+            min_value=0,
+            max_value=720,
+            step=1,
+        ),
+        _field(
+            "bAllowEnemyCampSpawnNearBaseCamp",
+            features,
+            "プレイヤー拠点の近くでもエネミー拠点の生成を許可します。オフにすると拠点周辺が安全になりやすいです。",
+            "bool",
+            "False",
+            label="拠点近くの敵拠点",
+        ),
+        _field(
+            "bAllowEnhanceStat_Attack",
+            features,
+            "「攻撃」へのステータス割り当てを許可します。オフにすると力の像などから攻撃を伸ばせません。",
+            "bool",
+            "True",
+            label="攻撃のステータス割り振り",
+        ),
+        _field(
+            "bAllowEnhanceStat_Health",
+            features,
+            "「HP」へのステータス割り振りを許可します。オフにすると体力強化ができなくなります。",
+            "bool",
+            "True",
+            label="HPのステータス割り振り",
+        ),
+        _field(
+            "bAllowEnhanceStat_Stamina",
+            features,
+            "「スタミナ」へのステータス割り当てを許可します。オフにするとスタミナ強化ができなくなります。",
+            "bool",
+            "True",
+            label="スタミナのステータス割り振り",
+        ),
+        _field(
+            "bAllowEnhanceStat_Weight",
+            features,
+            "「所持重量」へのステータス割り当てを許可します。オフにすると運搬量をステータスで伸ばせません。",
+            "bool",
+            "True",
+            label="所持重量のステータス割り振り",
+        ),
+        _field(
+            "bAllowEnhanceStat_WorkSpeed",
+            features,
+            "「作業速度」へのステータス割り当てを許可します。オフにすると作業速度をステータスで伸ばせません。",
+            "bool",
+            "True",
+            label="作業速度のステータス割り振り",
+        ),
+        _field(
+            "bAllowGlobalPalboxExport",
+            features,
+            "グローバルパルボックスへの保存を可能にします。このワールドのパルをアカウント共通の保管へ出せます。",
+            "bool",
+            "True",
+            label="グローバルパルボックスへ保存",
+        ),
+        _field(
+            "bAllowGlobalPalboxImport",
+            features,
+            "グローバルパルボックスからの読み込みを可能にします。オンだと別ワールドのパルを持ち込めるので、公開・対戦鯖ではオフが無難です。",
+            "bool",
+            "False",
+            label="グローバルパルボックスから読込",
+        ),
+        _field(
+            "bAutoResetGuildNoOnlinePlayers",
+            features,
+            "ギルド所属プレイヤーが誰もログインしなかった場合に、建築物や拠点パルを自動的に削除するかどうかです。発動までの時間は AutoResetGuildTimeNoOnlinePlayers です。",
+            "bool",
+            "False",
+            label="ギルド自動リセット",
+        ),
+        _field(
+            "AutoTransferMasterThresholdDays",
+            features,
+            "ギルドマスターがこの日数ログインしないと、リーダーをアクティブなメンバーへ自動で移します。放置ギルドで操作できなくなるのを防ぎます。確認の間隔は AutoTransferMasterCheckIntervalSeconds です。",
+            "int",
+            "14",
+            label="ギルドマスター自動移譲までの日数",
+            min_value=0,
+            max_value=365,
+            step=1,
+            official=False,
+        ),
+        _field(
+            "AutoTransferMasterCheckIntervalSeconds",
+            features,
+            "ギルドマスターが長くログインしていないかをサーバーが確認する間隔（秒）です。日数の閾値は AutoTransferMasterThresholdDays です。短くしすぎると負荷が増えます。",
+            "float",
+            "3600.000000",
+            label="ギルドマスター自動移譲の確認間隔（秒）",
+            min_value=1,
+            max_value=86400,
+            step=1,
+            official=False,
+        ),
+        _field(
+            "bBuildAreaLimit",
+            features,
+            "ファストトラベルなどの構造物付近で建築を禁止します。公開サーバーで転送ポイントを塞がれるのを防げます。",
+            "bool",
+            "False",
+            label="建築禁止エリア",
+        ),
+        _field(
+            "bCharacterRecreateInHardcore",
+            features,
+            "ハードコア設定時の、死亡後のキャラクター再作成可否です。オフだと死亡で参加終了になります。bHardcore がオフなら使いません。",
+            "bool",
+            "False",
+            label="ハードコア死亡後の再作成",
+        ),
+        _field(
+            "bDisplayPvPItemNumOnWorldMap_BaseCamp",
+            features,
+            "各拠点内にあるPvP専用アイテムの個数をマップ上に表示します。PvPサーバー向けの情報表示です。",
+            "bool",
+            "False",
+            label="マップに拠点のPvPアイテム数",
+        ),
+        _field(
+            "bDisplayPvPItemNumOnWorldMap_Player",
+            features,
+            "プレイヤーの位置とPvP専用アイテム数をマップに表示します。位置が分かると狩りやすくなります。",
+            "bool",
+            "False",
+            label="マップにプレイヤーとPvPアイテム",
+        ),
+        _field(
+            "bEnableFastTravel",
+            features,
+            "ファストトラベルを有効化します。オフにすると長距離移動が徒歩中心になります。拠点間だけに限る場合は bEnableFastTravelOnlyBaseCamp です。",
+            "bool",
+            "True",
+            label="ファストトラベル",
+        ),
+        _field(
+            "bEnableFastTravelOnlyBaseCamp",
+            features,
+            "ファストトラベルを拠点間のみに制限します。通常の転送ポイントは使えなくなります。",
+            "bool",
+            "False",
+            label="拠点間だけのファストトラベル",
+        ),
+        _field(
+            "bEnableInvaderEnemy",
+            features,
+            "襲撃を有効化します。オフにすると拠点への襲撃が来ません。建築や配合に集中したいときに使います。",
+            "bool",
+            "True",
+            label="襲撃イベント",
+        ),
+        _field(
+            "bEnableVoiceChat",
+            features,
+            "ゲーム内のボイスチャットを有効にします。聞こえる距離は VoiceChatMaxVolumeDistance と VoiceChatZeroVolumeDistance で調整します。",
+            "bool",
+            "False",
+            label="ボイスチャット",
+        ),
+        _field(
+            "bExistPlayerAfterLogout",
+            features,
+            "ログアウト時にプレイヤーをその場で寝た状態にします。PvPではログアウト逃げの抑制になります。PvEではオフが無難です。",
+            "bool",
+            "False",
+            label="ログアウト後もその場に残す",
+        ),
+        _field(
+            "bHardcore",
+            features,
+            "ハードコアを有効にします。死亡時にリスポーンできなくなります。作り直しは bCharacterRecreateInHardcore です。",
+            "bool",
+            "False",
+            label="ハードコア",
+        ),
+        _field(
+            "bInvisibleOtherGuildBaseCampAreaFX",
+            features,
+            "拠点範囲表示です。他ギルドの拠点範囲エフェクトの見え方に関わります。",
+            "bool",
+            "False",
+            label="拠点範囲の表示",
+        ),
+        _field(
+            "bIsPvP",
+            features,
+            "PvPを有効化するかどうかです。オンにすると対人戦のルールが入ります。プレイヤー間ダメージやフレンドリーファイアは別項目です。",
+            "bool",
+            "False",
+            label="対人戦（PvP）",
+        ),
+        _field(
+            "bIsRandomizerPalLevelRandom",
+            features,
+            "true にすると野生パルのレベルを完全にランダムにします。false にするとエリアに見合ったレベル内でランダム化されます。RandomizerType と一緒に使います。",
+            "bool",
+            "False",
+            label="野生パルレベルを完全ランダム",
+        ),
+        _field(
+            "bIsStartLocationSelectByMap",
+            features,
+            "ゲーム開始地点を地図から選べるようにします。友達の近くから始めたい協力鯖向きです。",
+            "bool",
+            "True",
+            label="開始地点を地図で選ぶ",
+        ),
+        _field(
+            "bShowPlayerList",
+            features,
+            "ESCキーで表示される画面での参加者一覧を有効にします。誰がオンラインか確認しやすくなります。",
+            "bool",
+            "False",
+            label="参加者一覧",
+        ),
+        _field(
+            "RandomizerSeed",
+            features,
+            "出現パルのランダムモードを設定した際のシード値です。RandomizerType が None 以外のときに使います。同じ値なら同じ配置を再現できます。",
+            "text",
+            "",
+            label="ランダム出現のシード",
+        ),
+        _field(
+            "RandomizerType",
+            features,
+            "出現パルのランダムモードです。None はランダム化しない、Region は地域ごと、All は完全にランダム化します。シードは RandomizerSeed です。",
+            "enum",
+            "None",
+            label="出現パルのランダムモード",
+            options=["None", "Region", "All"],
+            option_labels={
+                "None": "ランダム化しない",
+                "Region": "地域ごとにランダム化",
+                "All": "完全にランダム化",
+            },
+        ),
+        _field(
+            "VoiceChatMaxVolumeDistance",
+            features,
+            "ボイスチャットの通話音量を減衰させない距離です。この距離までは同じ大きさで聞こえます。聞こえなくなる距離は VoiceChatZeroVolumeDistance です。",
+            "float",
+            "2500",
+            label="ボイスが減衰しない距離",
+            min_value=0,
+            max_value=100000,
+            step=100,
+        ),
+        _field(
+            "VoiceChatZeroVolumeDistance",
+            features,
+            "ボイスチャットの通話音量を0にする距離です。Max より大きくしてください。bEnableVoiceChat がオフなら使いません。",
+            "float",
+            "6000",
+            label="ボイスが聞こえない距離",
+            min_value=0,
+            max_value=100000,
+            step=100,
+        ),
+        _field(
+            "AdditionalDropItemNumWhenPlayerKillingInPvPMode",
+            balance,
+            "bAdditionalDropItemWhenPlayerKillingInPvPMode が有効のとき、ドロップするアイテムの量です。何を落とすかは AdditionalDropItemWhenPlayerKillingInPvPMode です。",
+            "int",
+            "1",
+            label="PvPキル時の追加ドロップ数",
+            min_value=0,
+            max_value=100,
+            step=1,
+        ),
+        _field(
+            "AdditionalDropItemWhenPlayerKillingInPvPMode",
+            balance,
+            "bAdditionalDropItemWhenPlayerKillingInPvPMode が有効のとき、ドロップするアイテムのIDです。個数は AdditionalDropItemNumWhenPlayerKillingInPvPMode です。",
+            "text",
+            "",
+            label="PvPキル時の追加ドロップID",
+        ),
+        _field(
+            "bAdditionalDropItemWhenPlayerKillingInPvPMode",
+            balance,
+            "PvP有効化状態でプレイヤーをキルしたとき、専用アイテムをドロップするかです。落とす内容は追加ドロップIDと個数の項目です。",
+            "bool",
+            "False",
+            label="PvPキル時に専用アイテムを落とす",
+        ),
+        _field(
+            "BlockRespawnTime",
+            balance,
+            "死亡後、リスポーンするまでのクールタイム（秒）です。PvPでは長くすると死亡の重みが増えます。",
+            "float",
+            "5",
+            label="リスポーンまでの待ち時間（秒）",
+            min_value=0,
+            max_value=3600,
+            step=1,
+        ),
+        _field(
+            "bPalLost",
+            balance,
+            "死亡時にパルを永久的にロストするかです。オンだと手持ちパルが戻ってきません。配合したパルを失うので、普段はオフが安全です。",
+            "bool",
+            "False",
+            label="死亡時にパルをロスト",
+        ),
+        _field(
+            "BuildObjectDamageRate",
+            balance,
+            "建築物に対するダメージ倍率です。1が標準です。上げると拠点が壊れやすくなります。",
+            "float",
+            "1.000000",
+            label="建築物へのダメージ倍率",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "BuildObjectHpRate",
+            balance,
+            "プレイヤーが建てた建築物の耐久（HP）の倍率です。1が標準です。上げると拠点が壊れにくくなります。建築物へのダメージは BuildObjectDamageRate、劣化は BuildObjectDeteriorationDamageRate です。",
+            "float",
+            "1.000000",
+            label="建築物のHP倍率",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+            official=False,
+        ),
+        _field(
+            "BuildObjectDeteriorationDamageRate",
+            balance,
+            "建築物の劣化速度倍率です。1が標準です。0に近いほど劣化しません。",
+            "float",
+            "1.000000",
+            label="建築物の劣化速度",
+            min_value=0,
+            max_value=10,
+            step=0.1,
+        ),
+        _field(
+            "CollectionDropRate",
+            balance,
+            "採集アイテムの入手量倍率です。1が標準です。上げると木・鉱石などの回収が早くなります。",
+            "float",
+            "1.000000",
+            label="採集アイテムの入手量",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "CollectionObjectHpRate",
+            balance,
+            "採集オブジェクトのHP倍率です。1が標準です。下げると木や鉱石を壊しやすくなります。入手量は CollectionDropRate です。",
+            "float",
+            "1.000000",
+            label="採集オブジェクトのHP",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "CollectionObjectRespawnSpeedRate",
+            balance,
+            "採集オブジェクトのリスポーン間隔です。値が大きいほど間隔が長くなり、復活が遅くなります。早く戻したいときは下げます。",
+            "float",
+            "1.000000",
+            label="採集オブジェクトのリスポーン間隔",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "DayTimeSpeedRate",
+            balance,
+            "昼の経過速度です。1が標準です。大きくすると昼が短くなります。夜は NightTimeSpeedRate です。",
+            "float",
+            "1.000000",
+            label="昼の経過速度",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "DeathPenalty",
+            balance,
+            "死亡時に落とす内容です。None はロスト無し、Item は装備品以外のアイテム、ItemAndEquipment はすべての装備品とアイテム、All は全ての装備品と手持ちパルです。",
+            "enum",
+            "All",
+            label="デスペナルティ",
+            options=["None", "Item", "ItemAndEquipment", "All"],
+            option_labels={
+                "None": "ロスト無し",
+                "Item": "装備品以外のアイテム",
+                "ItemAndEquipment": "すべての装備品とアイテム",
+                "All": "全ての装備品と手持ちパル",
+            },
+        ),
+        _field(
+            "DenyTechnologyList",
+            balance,
+            '無効化するテクノロジーを設定します。テクノロジーIDを指定します。例：DenyTechnologyList=("PALBOX", "RepairBench")',
+            "text",
+            "",
+            label="無効化するテクノロジー",
+        ),
+        _field(
+            "EnemyDropItemRate",
+            balance,
+            "ドロップアイテム量の倍率です。1が標準です。上げると敵から出るアイテムが増えます。",
+            "float",
+            "1.000000",
+            label="敵のドロップ量",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "EquipmentDurabilityDamageRate",
+            balance,
+            "装備品の耐久度減少倍率です。1が標準です。下げると武器や防具が減りにくくなります。",
+            "float",
+            "1.000000",
+            label="装備の耐久減少",
+            min_value=0,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "ExpRate",
+            balance,
+            "経験値の入手倍率です。1が標準です。上げるとレベルとテクノロジーが早く進みます。上げすぎるとコンテンツより先に強くなりやすいです。",
+            "float",
+            "1.000000",
+            label="経験値の入手倍率",
+            min_value=0.1,
+            max_value=20,
+            step=0.1,
+        ),
+        _field(
+            "GuildPlayerMaxNum",
+            balance,
+            "ギルドの最大人数です。友達の人数より少し多めにしておくと、あとから入りやすくなります。",
+            "int",
+            "20",
+            label="ギルドの最大人数",
+            min_value=1,
+            max_value=50,
+            step=1,
+        ),
+        _field(
+            "GuildRejoinCooldownMinutes",
+            balance,
+            "ギルドを出てから、また入れるようになるまでのクールタイム（分）です。0ならすぐ再加入できます。",
+            "float",
+            "0",
+            label="ギルド再加入の待ち時間（分）",
+            min_value=0,
+            max_value=10080,
+            step=1,
+        ),
+        _field(
+            "ItemCorruptionMultiplier",
+            balance,
+            "アイテムの腐敗速度倍率です。1が標準です。下げると食料などが傷みにくくなります。",
+            "float",
+            "1.000000",
+            label="アイテムの腐敗速度",
+            min_value=0,
+            max_value=10,
+            step=0.1,
+        ),
+        _field(
+            "ItemWeightRate",
+            balance,
+            "アイテム重量倍率です。1が標準です。下げると同じ荷物でも軽くなり、運搬の往復が減ります。",
+            "float",
+            "1.000000",
+            label="アイテムの重量",
+            min_value=0,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "MonsterFarmActionSpeedRate",
+            balance,
+            "放牧によるアイテムの生産速度倍率です。1が標準です。牧場の出力を作業速度と揃えたいときに上げます。",
+            "float",
+            "1.000000",
+            label="放牧の生産速度",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "NightTimeSpeedRate",
+            balance,
+            "夜の経過速度です。1が標準です。大きくすると夜が短くなります。昼は DayTimeSpeedRate です。",
+            "float",
+            "1.000000",
+            label="夜の経過速度",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PalAutoHPRegeneRate",
+            balance,
+            "パルのHP自然回復倍率です。1が標準です。上げると戦闘後の待ちが短くなります。",
+            "float",
+            "1.000000",
+            label="パルのHP自然回復",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PalAutoHpRegeneRateInSleep",
+            balance,
+            "パルの睡眠時HP回復倍率（パルボックス内）です。1が標準です。上げるとボックスに入れたパルが早く治ります。",
+            "float",
+            "1.000000",
+            label="パルボックス内のHP回復",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PalCaptureRate",
+            balance,
+            "捕獲確率の倍率です。1が標準です。上げるとパルを捕まえやすくなります。",
+            "float",
+            "1.000000",
+            label="捕獲確率の倍率",
+            min_value=0.1,
+            max_value=2,
+            step=0.1,
+        ),
+        _field(
+            "PalDamageRateAttack",
+            balance,
+            "パルの与えるダメージ倍率です。1が標準です。上げると味方パルの火力が上がります。",
+            "float",
+            "1.000000",
+            label="パルの与えるダメージ",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PalDamageRateDefense",
+            balance,
+            "パルの受けるダメージ倍率です。1が標準です。下げると味方パルが倒れにくくなります。",
+            "float",
+            "1.000000",
+            label="パルの受けるダメージ",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PalEggDefaultHatchingTime",
+            balance,
+            "キョダイタマゴの孵化にかかる時間（時間）です。他のタマゴも孵化に時間がかかります。0に近いほどすぐ孵化します。古い設定では72時間のまま残ることがあります。",
+            "float",
+            "72.000000",
+            label="キョダイタマゴの孵化時間",
+            min_value=0,
+            max_value=240,
+            step=0.5,
+        ),
+        _field(
+            "PalSpawnNumRate",
+            balance,
+            "パル出現倍率です。上げると野生パルが増えますが、パフォーマンスに影響します。",
+            "float",
+            "1.000000",
+            label="パルの出現倍率",
+            min_value=0.1,
+            max_value=3,
+            step=0.1,
+        ),
+        _field(
+            "PalStaminaDecreaceRate",
+            balance,
+            "パルのスタミナ減少倍率です。1が標準です。下げるとパルが疲れにくくなります。キー名の Decreace はそのままです。",
+            "float",
+            "1.000000",
+            label="パルのスタミナ減少",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PalStomachDecreaceRate",
+            balance,
+            "パルの満腹度減少倍率です。1が標準です。下げると拠点パルが飢えにくくなります。キー名の Decreace はそのままです。",
+            "float",
+            "1.000000",
+            label="パルの満腹度減少",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PlayerAutoHPRegeneRate",
+            balance,
+            "プレイヤーのHP自然回復倍率です。1が標準です。上げると戦闘後の回復が早くなります。",
+            "float",
+            "1.000000",
+            label="プレイヤーのHP自然回復",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PlayerAutoHpRegeneRateInSleep",
+            balance,
+            "プレイヤーの睡眠時HP回復倍率です。1が標準です。ベッドなどで休んだときの回復が変わります。",
+            "float",
+            "1.000000",
+            label="プレイヤーの睡眠時HP回復",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PlayerDamageRateAttack",
+            balance,
+            "プレイヤーの与えるダメージ倍率です。1が標準です。上げると自分の攻撃が強くなります。",
+            "float",
+            "1.000000",
+            label="プレイヤーの与えるダメージ",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PlayerDamageRateDefense",
+            balance,
+            "プレイヤーの受けるダメージ倍率です。1が標準です。下げると被ダメージが減り、上げると厳しくなります。",
+            "float",
+            "1.000000",
+            label="プレイヤーの受けるダメージ",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PlayerStaminaDecreaceRate",
+            balance,
+            "プレイヤーのスタミナ減少倍率です。1が標準です。下げるとダッシュや操作で疲れにくくなります。キー名の Decreace はそのままです。",
+            "float",
+            "1.000000",
+            label="プレイヤーのスタミナ減少",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "PlayerStomachDecreaceRate",
+            balance,
+            "プレイヤーの満腹度減少倍率です。1が標準です。下げると食事の頻度が減ります。キー名の Decreace はそのままです。",
+            "float",
+            "1.000000",
+            label="プレイヤーの満腹度減少",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+        ),
+        _field(
+            "RespawnPenaltyDurationThreshold",
+            balance,
+            "再死亡時に RespawnPenaltyTimeScale で設定したクールタイム倍率を適用する生存時間の閾値（秒）です。0ならこの追加待ちは実質使いません。",
+            "float",
+            "0",
+            label="リスポーンペナルティ閾値（秒）",
+            min_value=0,
+            max_value=3600,
+            step=1,
+        ),
+        _field(
+            "RespawnPenaltyTimeScale",
+            balance,
+            "リスポーンクールタイムに適用する倍率です。閾値（RespawnPenaltyDurationThreshold）を満たした再死亡のときに、待ち時間へ掛けます。",
+            "float",
+            "2.000000",
+            label="リスポーン待ちの倍率",
+            min_value=0.1,
+            max_value=10,
+            step=0.1,
+        ),
+        _field(
+            "SupplyDropSpan",
+            balance,
+            "隕石・補給物資の投下間隔（分）です。専用サーバーでは効かない、という報告があります。",
+            "int",
+            "180",
+            label="隕石・補給の間隔（分）",
+            min_value=1,
+            max_value=999,
+            step=1,
+        ),
+        _field(
+            "Difficulty",
+            other,
+            "難易度プリセットです。個別の倍率（経験値やダメージなど）が優先されやすいです。細かく調整するなら None のまま下の倍率を変えます。",
+            "enum",
+            "None",
+            label="難易度プリセット",
+            options=["None", "Casual", "Normal", "Hard"],
+            option_labels={
+                "None": "なし",
+                "Casual": "カジュアル",
+                "Normal": "ノーマル",
+                "Hard": "ハード",
+            },
+            official=False,
+        ),
+        _field(
+            "WorkSpeedRate",
+            other,
+            "拠点パルの作業速度の倍率です。1が標準です。上げると製作・運搬・建築が早くなります。戦闘の強さは変わりません。",
+            "float",
+            "1.000000",
+            label="作業速度",
+            min_value=0.1,
+            max_value=5,
+            step=0.1,
+            official=False,
+        ),
+        _field(
+            "DropItemMaxNum",
+            other,
+            "ワールド内に同時に存在できるドロップアイテムの最大数です。超えると古いドロップから消えます。人数が多いほど余裕を持たせます。",
+            "int",
+            "3000",
+            label="ワールド内ドロップ上限",
+            min_value=0,
+            max_value=5000,
+            step=1,
+            official=False,
+        ),
+        _field(
+            "DropItemMaxNum_UNKO",
+            other,
+            "フンなど特殊なドロップの最大数です。bActiveUNKO がオフなら、ほぼ使いません。",
+            "int",
+            "100",
+            label="フンなど特殊ドロップの上限",
+            min_value=0,
+            max_value=1000,
+            step=1,
+            official=False,
+        ),
+        _field(
+            "DropItemAliveMaxHours",
+            other,
+            "ドロップアイテムが消えるまでの時間（時間）です。長くすると拾い忘れは減りますが、地面のオブジェクトが増えて負荷が上がります。",
+            "float",
+            "1",
+            label="ドロップが消える時間",
+            min_value=0.1,
+            max_value=24,
+            step=0.1,
+            official=False,
+        ),
+        _field(
+            "CoopPlayerMaxNum",
+            other,
+            "協力プレイの最大人数です。専用サーバーでは効かないことがあります。同時接続の上限は ServerPlayerMaxNum です。",
+            "int",
+            "4",
+            label="協力プレイの最大人数",
+            min_value=1,
+            max_value=32,
+            step=1,
+            official=False,
+        ),
+        _field(
+            "bEnablePlayerToPlayerDamage",
+            other,
+            "プレイヤー同士でダメージを与えられるようにします。PvPや誤射の有無に関わります。ギルド内は bEnableFriendlyFire も見てください。",
+            "bool",
+            "False",
+            label="プレイヤー間ダメージ",
+            official=False,
+        ),
+        _field(
+            "bEnableFriendlyFire",
+            other,
+            "味方（ギルドメンバーなど）への攻撃が当たるようにします。PvPや戦闘訓練向けです。",
+            "bool",
+            "False",
+            label="フレンドリーファイア",
+            official=False,
+        ),
+        _field(
+            "bCanPickupOtherGuildDeathPenaltyDrop",
+            other,
+            "他ギルドのプレイヤーが死亡して落としたアイテムを拾えるかどうかです。PvP略奪を許可するときにオンにします。",
+            "bool",
+            "False",
+            label="他ギルドのデスドロップを拾う",
+            official=False,
+        ),
+        _field(
+            "bEnableNonLoginPenalty",
+            other,
+            "しばらくログインしなかったときのペナルティを有効にします。友達鯖でオフにすると、忙しい人が不利になりにくいです。",
+            "bool",
+            "True",
+            label="未ログインペナルティ",
+            official=False,
+        ),
+        _field(
+            "bEnableDefenseOtherGuildPlayer",
+            other,
+            "他ギルドのプレイヤーに対する防衛の扱いです。拠点防衛や対人のルールに関わります。",
+            "bool",
+            "False",
+            label="他ギルドへの防衛",
+            official=False,
+        ),
+        _field(
+            "bActiveUNKO",
+            other,
+            "パルがフンを出すかどうかです。オンだと物理オブジェクトが増え、負荷の原因になりやすいです。",
+            "bool",
+            "False",
+            label="パルのフン",
+            official=False,
+        ),
+        _field(
+            "bEnableAimAssistPad",
+            other,
+            "コントローラー利用時のエイムアシストです。コンソールやパッド勢がいるならオンが無難です。",
+            "bool",
+            "True",
+            label="パッドのエイムアシスト",
+            official=False,
+        ),
+        _field(
+            "bEnableAimAssistKeyboard",
+            other,
+            "マウスとキーボード利用時のエイムアシストです。通常はオフです。",
+            "bool",
+            "False",
+            label="キーボードのエイムアシスト",
+            official=False,
+        ),
+        _field(
+            "bIsMultiplay",
+            other,
+            "マルチプレイ用のフラグです。専用サーバーでは他の人数設定の方が効くことが多いです。同時接続は ServerPlayerMaxNum を見てください。",
+            "bool",
+            "False",
+            label="マルチプレイフラグ",
+            official=False,
+        ),
+        _field(
+            "AutoSaveSpan",
+            other,
+            "ワールドを自動保存する間隔（秒）です。短すぎるとディスク負荷が増えます。長くすると、落ちたときに戻る地点が古くなります。",
+            "float",
+            "30",
+            label="オートセーブ間隔（秒）",
+            min_value=5,
+            max_value=3600,
+            step=1,
+            official=False,
+        ),
+        _field(
+            "BanListURL",
+            other,
+            "サーバーが参照する BAN リストのURLです。公式リストのままが安全です。見知らぬURLには向けないでください。",
+            "text",
+            "",
+            label="BANリストのURL",
+            official=False,
+        ),
+        _field(
+            "Region",
+            other,
+            "サーバーのリージョン表示です。空でも動作します。一覧上の分類に使われることがあります。",
+            "text",
+            "",
+            label="リージョン",
+            official=False,
+        ),
+        _field(
+            "bUseAuth",
+            other,
+            "プラットフォーム認証を使うかどうかです。オフにすると認証なしで入れやすくなりますが、不正接続のリスクが上がります。通常はオンです。",
+            "bool",
+            "True",
+            label="プラットフォーム認証",
+            official=False,
+        ),
+        _field(
+            "EnablePredatorBossPal",
+            other,
+            "フィールドに捕食ボスパルを出すかどうかです。1.0以降のコンテンツです。オフにするとその遭遇が減ります。",
+            "bool",
+            "True",
+            label="捕食ボスパル",
+            official=False,
+        ),
+    )
+
+
+SETTINGS_FIELDS: tuple[SettingField, ...] = _catalog()
+OFFICIAL_KEYS = frozenset(field["key"] for field in SETTINGS_FIELDS if field.get("official", True))
+_CATALOG_BY_KEY = {field["key"]: field for field in SETTINGS_FIELDS}
+
+
+def setting_fields() -> list[SettingField]:
+    return list(SETTINGS_FIELDS)
+
+
+def parse_platforms(value: str) -> list[str]:
+    stripped = value.strip()
+    if not stripped.startswith("(") or not stripped.endswith(")"):
+        return []
+    inner = stripped[1:-1].strip()
+    if not inner:
+        return []
+    return [part.strip() for part in inner.split(",") if part.strip()]
+
+
+def _is_platform_value(value: str) -> bool:
+    parts = parse_platforms(value)
+    if not parts:
+        return False
+    return all(part in PLATFORM_OPTIONS for part in parts)
+
+
+def _infer_kind(value: str) -> str:
+    stripped = value.strip()
+    if stripped in {"True", "False"}:
+        return "bool"
+    if _is_platform_value(stripped):
+        return "platforms"
+    if re.fullmatch(r"-?\d+", stripped):
+        return "int"
+    if re.fullmatch(r"-?\d+\.\d+", stripped):
+        return "float"
+    return "text"
+
+
+def _field_view(field: SettingField, values: dict[str, str]) -> dict[str, Any]:
+    key = field["key"]
+    present = key in values
+    raw = values.get(key, field["default"])
+    if key == "AdminPassword":
+        display = "********" if present else ""
+    else:
+        display = raw
+    view: dict[str, Any] = {
+        "key": key,
+        "category": field["category"],
+        "label": field["label"],
+        "description": field["description"],
+        "kind": field["kind"],
+        "value": display,
+        "default": field["default"],
+        "present": present,
+        "protected": field.get("protected", False),
+        "deprecated": field.get("deprecated", False),
+        "official": field.get("official", True),
+    }
+    if "min" in field:
+        view["min"] = field["min"]
+    if "max" in field:
+        view["max"] = field["max"]
+    if "step" in field:
+        view["step"] = field["step"]
+    if "options" in field:
+        view["options"] = list(field["options"])
+    if "option_labels" in field:
+        view["option_labels"] = dict(field["option_labels"])
+    return view
+
+
+def merge_settings_view(values: dict[str, str]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    known = set(_CATALOG_BY_KEY)
+    for field in SETTINGS_FIELDS:
+        result.append(_field_view(field, values))
+    other = "その他"
+    for key, raw in values.items():
+        if key in known:
+            continue
+        kind = _infer_kind(raw)
+        inferred: SettingField = {
+            "key": key,
+            "category": other,
+            "label": key,
+            "description": "カタログに無い設定です。キー名のまま表示しています。意味が分からなければ変更しないでください。",
+            "kind": kind,
+            "default": raw,
+            "official": False,
+        }
+        result.append(_field_view(inferred, values))
+    return result
+
+
+def serialize_platforms(selected: list[str]) -> str:
+    valid = [name for name in selected if name in PLATFORM_OPTIONS]
+    if not valid:
+        return DEFAULT_PLATFORMS
+    return f"({','.join(valid)})"
+
+
+def serialize_field_value(field: SettingField | dict[str, Any], raw: Any) -> str:
+    kind = field.get("kind", "text")
+    if kind == "bool":
+        text = str(raw).strip()
+        if text in {"True", "False"}:
+            return text
+        return "True" if text.lower() in {"1", "true", "yes", "on", "有効"} else "False"
+    if kind == "platforms":
+        if isinstance(raw, list):
+            return serialize_platforms([str(item) for item in raw])
+        if isinstance(raw, str):
+            if raw.startswith("("):
+                return serialize_platforms(parse_platforms(raw))
+            return serialize_platforms([part.strip() for part in raw.split(",") if part.strip()])
+        return DEFAULT_PLATFORMS
+    return str(raw).strip()

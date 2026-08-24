@@ -1,0 +1,8 @@
+---
+description: 新規チャットではコードを書く前に仕様ドキュメントを読む
+alwaysApply: true
+---
+
+このチャットの最初の作業として、`.cursor/skills/project-bootstrap/SKILL.md` を読み、そこに書いてあるファイルを Read してから答える。記憶だけで仕様を述べない。ユーザー向けの返答は日本語。
+
+製品コードを書く仕事なら、続けて `.cursor/skills/plan-and-review/SKILL.md` に従う。Composer 2.5 以外は実装せず、指示とレビューにする。

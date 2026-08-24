@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Home Server Admin</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css?v=7">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark" aria-hidden="true"></div>
+        <div>
+          <h1>Home Server Admin</h1>
+          <p>サーバー管理</p>
+        </div>
+      </div>
+      <nav class="nav">
+        <button type="button" class="active" data-nav="servers">サーバー</button>
+        <button type="button" data-nav="steamcmd">SteamCMD</button>
+        <button type="button" data-nav="discord">Discord</button>
+        <button type="button" data-nav="logs">ログ</button>
+      </nav>
+      <div class="foot">
+        <p class="unofficial">非公式。Pocketpair / Palworld とは無関係です。</p>
+        <p>PalServer / SteamCMD は同梱していません。この PC 上のファイルだけを操作します。</p>
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <div>
+          <p class="kicker">Control</p>
+          <h2 id="page-title">サーバー</h2>
+          <p class="lede" id="page-lede">起動・停止・設定・更新をこの画面で行えます。</p>
+        </div>
+        <button type="button" class="btn danger" id="shutdown">終了</button>
+      </header>
+
+      <section class="panel active" id="panel-servers">
+        <div id="servers"></div>
+      </section>
+
+      <section class="panel" id="panel-steamcmd">
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h3>SteamCMD</h3>
+              <p class="lede">Valve 公式の SteamCMD をこの PC にダウンロードします。ボタンを押したときだけ実行します。</p>
+            </div>
+          </div>
+          <p id="steamcmd-status">確認中…</p>
+          <div class="row" style="margin-top:12px">
+            <input id="steamcmd-dir" class="grow" placeholder="導入フォルダ（例: C:/SteamCMD）">
+            <button type="button" class="btn" id="steamcmd-browse">参照</button>
+            <button type="button" class="btn primary" id="steamcmd-install">SteamCMD を入れる</button>
+          </div>
+          <div class="log" id="steamcmd-log"></div>
+        </article>
+      </section>
+
+      <section class="panel" id="panel-discord">
+        <article class="card">
+          <h3>Discord</h3>
+          <p class="lede">友達への状況通知だけです。起動・停止は Discord からはできません。</p>
+          <details class="guide">
+            <summary><strong>ボットの作り方</strong></summary>
+            <p>トークンと ID は Discord の画面からコピーしてください。このツールが Discord アカウントを作ることはありません。</p>
+            <ol>
+              <li><a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord Developer Portal</a> で Application を作り、Bot を追加します。Reset Token でトークンをコピーし、下の DISCORD_TOKEN に貼ってください。他人には見せないでください。</li>
+              <li>Discord のユーザー設定 → 詳細設定 → 開発者モード をオンにします。</li>
+              <li>通知したいサーバーの <strong>名前</strong> を右クリック → 「ID をコピー」。これがサーバー ID（guild_id）です。チャンネルの ID ではありません。</li>
+              <li>状況を出したいテキストチャンネルを右クリック → 「ID をコピー」（状況チャンネル）。通知を別チャンネルにするなら、通知チャンネルの ID もコピーします。</li>
+              <li>自分のユーザー名を右クリック → 「ID をコピー」（<code>/announce</code> 用。空のままでも保存できます）。</li>
+              <li>保存すると「ボットをサーバーに招待」が出ます。このツールがトークンから招待 URL を作ります。Developer Portal の OAuth2 → URL Generator で URL を作る必要はありません。リンクには最初から Scopes の <code>bot</code> と <code>applications.commands</code>、権限（チャンネルを見る・メッセージ送信・埋め込み・履歴の閲覧）が入っています。</li>
+              <li>自分で URL を作る場合だけ: Portal の OAuth2 → URL Generator で Scopes の <code>bot</code> と <code>applications.commands</code> の両方にチェックし、Bot Permissions で上の 4 つを入れて Generate URL します。<code>applications.commands</code> が無いとスラッシュコマンドが <code>Missing Access</code> になります。</li>
+              <li><code>Missing Access</code> なら、サーバーからボットをキックして、同じ招待 URL で入れ直してください。</li>
+              <li>Discord からゲームサーバーの起動・停止はできません。状況の通知だけです。</li>
+            </ol>
+          </details>
+          <p id="discord-status" class="hint">確認中…</p>
+          <p id="discord-error" class="log error hidden"></p>
+          <div class="field">
+            <label for="discord-token">DISCORD_TOKEN</label>
+            <input id="discord-token" type="password" autocomplete="off" placeholder="Developer Portal の Bot トークン">
+          </div>
+          <div class="field">
+            <label for="discord-guild">サーバー ID (guild_id)</label>
+            <input id="discord-guild">
+          </div>
+          <div class="field">
+            <label for="discord-status-channel">状況チャンネル ID</label>
+            <input id="discord-status-channel">
+          </div>
+          <div class="field">
+            <label for="discord-notify-channel">通知チャンネル ID</label>
+            <input id="discord-notify-channel" placeholder="空欄なら状況チャンネルと同じ">
+          </div>
+          <div class="field">
+            <label for="discord-owner">あなたのユーザー ID</label>
+            <input id="discord-owner">
+          </div>
+          <p class="hint" style="margin-top:8px">保存してもゲームサーバーは止まりません。</p>
+          <div class="row actions" style="margin-top:12px">
+            <button type="button" class="btn primary" id="discord-save">保存してボットを起動</button>
+          </div>
+          <div id="discord-invite-wrap" class="invite-wrap hidden">
+            <a id="discord-invite" href="#" target="_blank" rel="noopener">ボットをサーバーに招待</a>
+            <p class="hint">このリンクには bot と applications.commands、必要な権限がすでに付いています。Developer Portal で URL を作り直す必要はありません。</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel" id="panel-logs">
+        <article class="card">
+          <h3>アプリログ</h3>
+          <p class="lede">起動・再起動・Discord ボットの記録です。右上の「終了」ではゲームサーバーは止まりません。</p>
+          <div class="applog" id="applog">ログを読み込み中…</div>
+        </article>
+      </section>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="modal">
+    <div class="modal-card">
+      <p id="modal-text"></p>
+      <div class="row">
+        <button type="button" class="btn primary" id="modal-ok">続ける</button>
+        <button type="button" class="btn" id="modal-cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const titles = {
+      servers: ["サーバー", "起動・停止・設定・更新をこの画面で行えます。"],
+      steamcmd: ["SteamCMD", "専用サーバーの導入ツールです。PalServer は同梱していません。"],
+      discord: ["Discord", "友達への状況通知だけです。起動・停止は Discord からはできません。"],
+      logs: ["ログ", "コマンドプロンプトの代わりに、この画面の記録を見てください。"],
+    };
+
+    function esc(value) {
+      return String(value).replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[ch]));
+    }
+
+    async function api(path, options = {}) {
+      const { timeoutMs = 300000, ...rest } = options;
+      const res = await fetch(path, {
+        ...rest,
+        signal: rest.signal || AbortSignal.timeout(timeoutMs),
+        headers: { "Content-Type": "application/json", ...(rest.headers || {}) },
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    function el(html) {
+      const t = document.createElement("template");
+      t.innerHTML = html.trim();
+      return t.content.firstElementChild;
+    }
+
+    function confirmAsync(message, labels = {}) {
+      const okLabel = labels.ok || "続ける";
+      const cancelLabel = labels.cancel || "キャンセル";
+      const modal = document.getElementById("modal");
+      const ok = document.getElementById("modal-ok");
+      const cancel = document.getElementById("modal-cancel");
+      document.getElementById("modal-text").textContent = message;
+      ok.textContent = okLabel;
+      cancel.textContent = cancelLabel;
+      modal.classList.remove("hidden");
+      return new Promise((resolve) => {
+        const done = (value) => {
+          modal.classList.add("hidden");
+          ok.onclick = null;
+          cancel.onclick = null;
+          resolve(value);
+        };
+        ok.onclick = () => done(true);
+        cancel.onclick = () => done(false);
+      });
+    }
+
+    function setNav(name) {
+      document.querySelectorAll("[data-nav]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.nav === name);
+      });
+      document.querySelectorAll(".panel").forEach((panel) => {
+        panel.classList.toggle("active", panel.id === `panel-${name}`);
+      });
+      const [title, lede] = titles[name];
+      document.getElementById("page-title").textContent = title;
+      document.getElementById("page-lede").textContent = lede;
+      if (name === "discord") loadDiscord().catch(() => {});
+    }
+
+    document.querySelectorAll("[data-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => setNav(btn.dataset.nav));
+    });
+
+    function updateDiscordUi(data) {
+      const status = document.getElementById("discord-status");
+      const error = document.getElementById("discord-error");
+      const tokenInput = document.getElementById("discord-token");
+      const inviteWrap = document.getElementById("discord-invite-wrap");
+      const inviteLink = document.getElementById("discord-invite");
+      error.classList.add("hidden");
+      error.textContent = "";
+      document.getElementById("discord-guild").value = data.guild_id || "";
+      document.getElementById("discord-status-channel").value = data.status_channel_id || "";
+      document.getElementById("discord-notify-channel").value = data.notify_channel_id || "";
+      document.getElementById("discord-owner").value = data.owner_user_id || "";
+      tokenInput.value = "";
+      tokenInput.placeholder = data.has_token
+        ? "変更するときだけ入力"
+        : "Developer Portal の Bot トークン";
+      if (data.bot_error) {
+        error.textContent = data.bot_error;
+        error.classList.remove("hidden");
+        status.textContent = "エラー: ボットが起動できませんでした";
+      } else if (data.configured && data.bot_running) {
+        status.textContent = "設定済み（ボット起動中）";
+      } else if (data.configured || data.has_token) {
+        status.textContent = "設定済み（ボットは停止中）";
+      } else {
+        status.textContent = "未設定";
+      }
+      if (data.invite_url) {
+        inviteWrap.classList.remove("hidden");
+        inviteLink.href = data.invite_url;
+      } else {
+        inviteWrap.classList.add("hidden");
+      }
+    }
+
+    async function loadDiscord() {
+      const data = await api("/api/discord");
+      updateDiscordUi(data);
+    }
+
+    document.getElementById("discord-save").addEventListener("click", async () => {
+      const error = document.getElementById("discord-error");
+      const btn = document.getElementById("discord-save");
+      error.classList.add("hidden");
+      btn.disabled = true;
+      try {
+        const body = {
+          discord_token: document.getElementById("discord-token").value.trim(),
+          guild_id: document.getElementById("discord-guild").value.trim(),
+          status_channel_id: document.getElementById("discord-status-channel").value.trim(),
+          notify_channel_id: document.getElementById("discord-notify-channel").value.trim(),
+          owner_user_id: document.getElementById("discord-owner").value.trim(),
+        };
+        const data = await api("/api/discord", { method: "POST", body: JSON.stringify(body) });
+        updateDiscordUi(data);
+        if (data.message) {
+          document.getElementById("discord-status").textContent = data.message;
+        }
+      } catch (err) {
+        error.textContent = err.message;
+        error.classList.remove("hidden");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    const serverCards = new Map();
+
+    async function refresh() {
+      const root = document.getElementById("servers");
+      const data = await api("/api/servers");
+      const seen = new Set();
+      if (!data.servers.length) {
+        serverCards.clear();
+        root.innerHTML = "";
+        root.appendChild(el(`<article class="card"><h3>サーバーがありません</h3><p class="lede">初回セットアップで PalServer フォルダを指定してください。</p></article>`));
+        return;
+      }
+      for (const server of data.servers) {
+        seen.add(server.id);
+        let entry = serverCards.get(server.id);
+        if (!entry) {
+          const card = renderServer(server);
+          root.appendChild(card);
+          entry = { card, settingsLoaded: false, baseline: null, dirty: false };
+          serverCards.set(server.id, entry);
+          loadSettingsPanel(server.id, entry);
+        } else {
+          updateServerCard(entry.card, server);
+          if (!entry.settingsLoaded && !entry.dirty) {
+            loadSettingsPanel(server.id, entry);
+          }
+        }
+      }
+      for (const [id, entry] of [...serverCards.entries()]) {
+        if (!seen.has(id)) {
+          entry.card.remove();
+          serverCards.delete(id);
+        }
+      }
+    }
+
+    function gameUpdateLabel(update) {
+      if (!update) return "不明";
+      if (update.update_available) return "更新あり";
+      const summary = update.summary || "";
+      if (!summary || summary === "バージョン情報なし") return "不明";
+      return "最新";
+    }
+
+    function statusLabel(server) {
+      if (server.status === "auth") return '<span class="badge warn"><span class="dot"></span>REST 認証エラー</span>';
+      if (server.online) return '<span class="badge on"><span class="dot"></span>オンライン</span>';
+      return '<span class="badge off"><span class="dot"></span>オフライン</span>';
+    }
+
+    function updateServerCard(card, server) {
+      card.dataset.serverId = server.id;
+      const schedule = server.schedule || { enabled: false, time: "05:00", timezone: "Asia/Tokyo" };
+      const scheduleText = schedule.enabled
+        ? `定時再起動 ${esc(schedule.time)} (${esc(schedule.timezone)})`
+        : "定時再起動なし";
+      const summary = server.update && server.update.summary ? esc(server.update.summary) : "バージョン情報なし";
+      const head = card.querySelector(".card-head");
+      if (head) {
+        head.innerHTML = `
+          <div>
+            <h3>${esc(server.name)} <span style="color:var(--muted);font-weight:500">/ ${esc(server.id)}</span></h3>
+            <p class="lede">${scheduleText}</p>
+          </div>
+          ${statusLabel(server)}
+        `;
+      }
+      const metrics = card.querySelector(".metrics");
+      if (metrics) {
+        metrics.innerHTML = `
+          <div class="metric"><span>状態</span><strong>${server.online ? "稼働中" : server.status === "auth" ? "認証エラー" : "停止中"}</strong></div>
+          <div class="metric"><span>ゲーム更新</span><strong>${gameUpdateLabel(server.update)}</strong></div>
+          <div class="metric"><span>ビルド</span><strong>${summary}</strong></div>
+        `;
+      }
+      const pathEl = card.querySelector("[data-server-path]");
+      if (pathEl) {
+        pathEl.textContent = server.working_directory ? `サーバーファイル: ${server.working_directory}` : "";
+        pathEl.classList.toggle("hidden", !server.working_directory);
+      }
+      const hintEl = card.querySelector("[data-server-hints]");
+      if (hintEl) {
+        hintEl.innerHTML = server.hints && server.hints.length ? server.hints.map(esc).join("<br>") : "";
+        hintEl.classList.toggle("hidden", !(server.hints && server.hints.length));
+      }
+      const startBtn = card.querySelector('[data-act="start"]');
+      const stopBtn = card.querySelector('[data-act="stop"]');
+      if (startBtn) startBtn.disabled = server.online || server.status === "auth";
+      if (stopBtn) stopBtn.disabled = !server.online;
+      const log = card.querySelector("[data-log]");
+      if (log && server.status === "auth" && !serverCards.get(server.id)?.dirty) {
+        log.classList.add("error");
+        log.textContent = "REST API のパスワードが違います。.env と PalWorldSettings.ini の AdminPassword を揃えてください。";
+      }
+    }
+
+    function renderServer(server) {
+      const schedule = server.schedule || { enabled: false, time: "05:00", timezone: "Asia/Tokyo", warn_seconds: 120 };
+      const scheduleText = schedule.enabled
+        ? `定時再起動 ${esc(schedule.time)} (${esc(schedule.timezone)})`
+        : "定時再起動なし";
+      const startDisabled = server.online || server.status === "auth" ? "disabled" : "";
+      const stopDisabled = server.online ? "" : "disabled";
+      const summary = server.update && server.update.summary ? esc(server.update.summary) : "バージョン情報なし";
+      const card = el(`<article class="card" data-server-id="${esc(server.id)}"></article>`);
+      card.innerHTML = `
+        <div class="card-head">
+          <div>
+            <h3>${esc(server.name)} <span style="color:var(--muted);font-weight:500">/ ${esc(server.id)}</span></h3>
+            <p class="lede">${scheduleText}</p>
+          </div>
+          ${statusLabel(server)}
+        </div>
+        <div class="metrics">
+          <div class="metric"><span>状態</span><strong>${server.online ? "稼働中" : server.status === "auth" ? "認証エラー" : "停止中"}</strong></div>
+          <div class="metric"><span>ゲーム更新</span><strong>${gameUpdateLabel(server.update)}</strong></div>
+          <div class="metric"><span>ビルド</span><strong>${summary}</strong></div>
+        </div>
+        <p class="lede${server.working_directory ? "" : " hidden"}" data-server-path style="margin-top:8px">${server.working_directory ? `サーバーファイル: ${esc(server.working_directory)}` : ""}</p>
+        <div class="hint${server.hints && server.hints.length ? "" : " hidden"}" data-server-hints>${server.hints && server.hints.length ? server.hints.map(esc).join("<br>") : ""}</div>
+        <div class="ops" data-ops>
+          <div class="field">
+            <label>友達の入り方</label>
+            <input data-join-info value="${esc(server.join_info || "")}">
+          </div>
+          <div class="row" style="align-items:center;margin-top:8px">
+            <label class="toggle"><input type="checkbox" data-restart-enabled ${schedule.enabled ? "checked" : ""}> 定時再起動</label>
+            <input type="time" data-restart-time value="${esc(schedule.time)}">
+          </div>
+          <div class="row actions" style="margin-top:8px">
+            <button type="button" class="btn" data-save-ops>入り方と定時再起動を保存</button>
+          </div>
+          <p class="hint">保存してもゲームサーバーは止まりません。定時再起動はこの管理ツールを開いている間だけ動きます。</p>
+        </div>
+        <div class="row actions">
+          <button class="btn primary" data-act="start" ${startDisabled}>起動</button>
+          <button class="btn danger" data-act="stop" ${stopDisabled}>停止</button>
+          <button class="btn" data-act="restart">再起動</button>
+          <button class="btn" data-act="steam-update">ゲームを更新（SteamCMD）</button>
+        </div>
+        <div class="log" data-log></div>
+        <div class="settings-panel" data-settings>
+          <div class="settings-head">
+            <h4>PalWorldSettings.ini</h4>
+            <p class="lede">公式パラメータ（経験値の ExpRate、DeathPenalty など）をカテゴリ別に編集できます。変更した項目だけ保存されます。</p>
+            <input type="search" class="settings-search grow" data-settings-search placeholder="設定を検索（キー名・説明）">
+          </div>
+          <div class="settings-body" data-settings-body>読み込み中…</div>
+          <div class="settings-foot row">
+            <label class="toggle"><input type="checkbox" data-restart checked> 再起動して適用</label>
+            <button type="button" class="btn primary" data-save-settings>設定を保存</button>
+          </div>
+        </div>
+      `;
+      const log = card.querySelector("[data-log]");
+      if (server.status === "auth") {
+        log.classList.add("error");
+        log.textContent = "REST API のパスワードが違います。.env と PalWorldSettings.ini の AdminPassword を揃えてください。";
+      }
+      const saveOps = card.querySelector("[data-save-ops]");
+      if (saveOps) {
+        saveOps.addEventListener("click", async () => {
+          log.classList.remove("error");
+          log.textContent = "保存中…";
+          saveOps.disabled = true;
+          try {
+            const data = await api(`/api/servers/${server.id}/ops`, {
+              method: "POST",
+              body: JSON.stringify({
+                join_info: card.querySelector("[data-join-info]").value,
+                restart_enabled: card.querySelector("[data-restart-enabled]").checked,
+                restart_time: card.querySelector("[data-restart-time]").value,
+              }),
+            });
+            log.textContent = data.message;
+            await refresh();
+          } catch (err) {
+            log.classList.add("error");
+            log.textContent = err.message;
+          } finally {
+            saveOps.disabled = false;
+          }
+        });
+      }
+      card.querySelectorAll("button[data-act]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          log.classList.remove("error");
+          log.textContent = "実行中…";
+          try {
+            const extra = {};
+            if (btn.dataset.act === "steam-update") {
+              const ok = await confirmAsync("サーバーを止めて SteamCMD で専用サーバーを更新します。セーブデータはバックアップします。続けますか？");
+              if (!ok) {
+                log.textContent = "キャンセルしました";
+                return;
+              }
+              extra.timeoutMs = 7200000;
+            }
+            const data = await api(`/api/servers/${server.id}/${btn.dataset.act}`, {
+              method: "POST",
+              body: JSON.stringify({ wait_seconds: 60, restart: true, backup: true }),
+              ...extra,
+            });
+            log.textContent = data.message;
+            await refresh();
+          } catch (err) {
+            log.classList.add("error");
+            log.textContent = err.message;
+          }
+        });
+      });
+      const saveBtn = card.querySelector("[data-save-settings]");
+      saveBtn.addEventListener("click", () => saveSettings(server.id));
+      return card;
+    }
+
+    function parsePlatforms(value) {
+      const text = String(value || "").trim();
+      if (!text.startsWith("(") || !text.endsWith(")")) return [];
+      return text.slice(1, -1).split(",").map((part) => part.trim()).filter(Boolean);
+    }
+
+    function formatPlatforms(selected) {
+      const valid = ["Steam", "Xbox", "PS5", "Mac"].filter((name) => selected.includes(name));
+      if (!valid.length) return "(Steam,Xbox,PS5,Mac)";
+      return `(${valid.join(",")})`;
+    }
+
+    function readFieldValue(row, field) {
+      if (field.protected || field.deprecated) return field.value;
+      if (field.kind === "bool") {
+        const select = row.querySelector("select[data-kind='bool']");
+        return select ? select.value : field.value;
+      }
+      if (field.kind === "enum") {
+        const select = row.querySelector("select[data-kind='enum']");
+        return select ? select.value : field.value;
+      }
+      if (field.kind === "platforms") {
+        const checked = [...row.querySelectorAll("input[type='checkbox'][data-platform]")]
+          .filter((input) => input.checked)
+          .map((input) => input.dataset.platform);
+        return formatPlatforms(checked);
+      }
+      if (field.kind === "float" || field.kind === "int") {
+        const input = row.querySelector("input[type='number']");
+        return input ? input.value : field.value;
+      }
+      const input = row.querySelector("input[type='text'], textarea");
+      return input ? input.value : field.value;
+    }
+
+    function renderFieldControl(field) {
+      const disabled = field.protected || field.deprecated;
+      const dis = disabled ? "disabled" : "";
+      if (field.kind === "bool") {
+        const options = ["True", "False"];
+        if (!options.includes(field.value)) options.unshift(field.value);
+        const opts = options.map((value) => {
+          const label = value === "True" ? "有効" : value === "False" ? "無効" : value;
+          const selected = value === field.value ? "selected" : "";
+          return `<option value="${esc(value)}" ${selected}>${esc(label)}</option>`;
+        }).join("");
+        return `<select data-kind="bool" ${dis}>${opts}</select>`;
+      }
+      if (field.kind === "enum") {
+        const options = [...(field.options || [])];
+        if (field.value && !options.includes(field.value)) options.unshift(field.value);
+        const labels = field.option_labels || {};
+        const opts = options.map((value) => {
+          const selected = value === field.value ? "selected" : "";
+          const label = labels[value] || value;
+          return `<option value="${esc(value)}" ${selected}>${esc(label)}</option>`;
+        }).join("");
+        return `<select data-kind="enum" ${dis}>${opts}</select>`;
+      }
+      if (field.kind === "platforms") {
+        const selected = parsePlatforms(field.value);
+        const boxes = ["Steam", "Xbox", "PS5", "Mac"].map((name) => {
+          const checked = selected.includes(name) ? "checked" : "";
+          return `<label class="platform-check"><input type="checkbox" data-platform="${esc(name)}" ${checked} ${dis}> ${esc(name)}</label>`;
+        }).join("");
+        return `<div class="platform-boxes">${boxes}</div>`;
+      }
+      if (field.kind === "float" || field.kind === "int") {
+        const min = field.min != null ? field.min : 0;
+        const max = field.max != null ? field.max : 100;
+        const step = field.step != null ? field.step : (field.kind === "int" ? 1 : 0.1);
+        const num = Number(field.value);
+        const rangeVal = Number.isFinite(num) ? Math.min(max, Math.max(min, num)) : min;
+        return `
+          <div class="numeric-control">
+            <input type="range" min="${min}" max="${max}" step="${step}" value="${rangeVal}" ${dis}>
+            <input type="number" step="${step}" value="${esc(field.value)}" ${dis}>
+          </div>
+        `;
+      }
+      if (field.key === "ServerDescription") {
+        return `<textarea rows="3" ${dis}>${esc(field.value)}</textarea>`;
+      }
+      return `<input type="text" value="${esc(field.value)}" ${dis}>`;
+    }
+
+    function bindFieldRow(row) {
+      const range = row.querySelector('input[type="range"]');
+      const number = row.querySelector('input[type="number"]');
+      if (range && number) {
+        range.addEventListener("input", () => { number.value = range.value; });
+        number.addEventListener("input", () => {
+          const min = Number(range.min);
+          const max = Number(range.max);
+          const val = Number(number.value);
+          range.value = Number.isFinite(val) ? Math.min(max, Math.max(min, val)) : min;
+        });
+      }
+    }
+
+    function markSettingsDirty(entry) {
+      entry.dirty = true;
+    }
+
+    function renderSettingsForm(entry, fields) {
+      entry.fields = fields;
+      const body = entry.card.querySelector("[data-settings-body]");
+      const categories = new Map();
+      for (const field of fields) {
+        if (!categories.has(field.category)) categories.set(field.category, []);
+        categories.get(field.category).push(field);
+      }
+      const parts = [];
+      for (const [category, items] of categories.entries()) {
+        const rows = items.map((field) => {
+          const note = field.protected
+            ? '<p class="setting-note">管理画面からは変更できません（初回セットアップのみ）</p>'
+            : field.deprecated
+              ? '<p class="setting-note">このバージョンでは使用できません。CrossplayPlatforms を使用してください。</p>'
+              : "";
+          return `
+            <div class="setting-row" data-setting-key="${esc(field.key)}" data-kind="${esc(field.kind)}" data-protected="${field.protected || field.deprecated ? "1" : ""}" data-search="${esc(field.key + " " + field.label + " " + field.description)}">
+              <div class="setting-meta">
+                <strong>${esc(field.label)}</strong>
+                <code class="setting-key">${esc(field.key)}</code>
+                <p class="setting-desc">${esc(field.description)}</p>
+                ${note}
+              </div>
+              <div class="setting-control">${renderFieldControl(field)}</div>
+            </div>
+          `;
+        }).join("");
+        parts.push(`<details class="settings-category" open><summary>${esc(category)}</summary>${rows}</details>`);
+      }
+      body.innerHTML = parts.join("");
+      body.querySelectorAll(".setting-row").forEach((row) => {
+        bindFieldRow(row);
+        row.querySelectorAll("input, select, textarea").forEach((control) => {
+          control.addEventListener("input", () => markSettingsDirty(entry));
+          control.addEventListener("change", () => markSettingsDirty(entry));
+        });
+      });
+      const search = entry.card.querySelector("[data-settings-search]");
+      if (search && !search.dataset.bound) {
+        search.dataset.bound = "1";
+        search.addEventListener("input", () => {
+          const q = search.value.trim().toLowerCase();
+          body.querySelectorAll(".setting-row").forEach((row) => {
+            const hay = (row.dataset.search || "").toLowerCase();
+            row.classList.toggle("hidden", q && !hay.includes(q));
+          });
+        });
+      }
+    }
+
+    function showSettingsLoadError(entry, message) {
+      const body = entry.card.querySelector("[data-settings-body]");
+      if (!body) return;
+      body.innerHTML = `
+        <p class="setting-error">${esc(message)}</p>
+        <p class="lede">PalWorldSettings.ini がまだない場合は、サーバーを一度起動するか、初回セットアップで REST API を有効にしてください。</p>
+      `;
+    }
+
+    async function loadSettingsPanel(serverId, entry) {
+      if (entry.settingsLoaded && entry.dirty) return;
+      try {
+        const data = await api(`/api/servers/${serverId}/settings`);
+        entry.baseline = Object.fromEntries((data.fields || []).map((field) => [field.key, field.value]));
+        renderSettingsForm(entry, data.fields || []);
+        entry.settingsLoaded = true;
+        entry.loadError = null;
+      } catch (err) {
+        entry.settingsLoaded = false;
+        entry.loadError = err.message;
+        showSettingsLoadError(entry, err.message);
+      }
+    }
+
+    async function saveSettings(serverId) {
+      const entry = serverCards.get(serverId);
+      if (!entry || !entry.baseline || !entry.fields) return;
+      const body = entry.card.querySelector("[data-settings-body]");
+      const changes = {};
+      for (const field of entry.fields) {
+        if (field.protected || field.deprecated) continue;
+        const row = body.querySelector(`[data-setting-key="${field.key}"]`);
+        if (!row) continue;
+        const current = readFieldValue(row, field);
+        if (current !== entry.baseline[field.key]) changes[field.key] = current;
+      }
+      const log = entry.card.querySelector("[data-log]");
+      if (!Object.keys(changes).length) {
+        log.textContent = "変更がありません";
+        return;
+      }
+      const restart = entry.card.querySelector("[data-restart]").checked;
+      log.classList.remove("error");
+      log.textContent = "設定を書き込んでいます…";
+      try {
+        const result = await api(`/api/servers/${serverId}/settings`, {
+          method: "POST",
+          body: JSON.stringify({ changes, restart }),
+        });
+        log.textContent = result.message || "設定を保存しました";
+        entry.dirty = false;
+        const refreshed = await api(`/api/servers/${serverId}/settings`);
+        entry.baseline = Object.fromEntries((refreshed.fields || []).map((field) => [field.key, field.value]));
+        renderSettingsForm(entry, refreshed.fields || []);
+      } catch (err) {
+        log.classList.add("error");
+        log.textContent = err.message;
+      }
+    }
+
+    async function pumpAppLog() {
+      const box = document.getElementById("applog");
+      try {
+        const data = await api("/api/logs");
+        box.textContent = (data.lines || []).join("\n") || "まだログはありません";
+        box.scrollTop = box.scrollHeight;
+      } catch (err) {
+        box.textContent = "ログを読み込めません: " + err.message;
+      }
+    }
+
+    async function refreshSteamcmd() {
+      const status = document.getElementById("steamcmd-status");
+      const input = document.getElementById("steamcmd-dir");
+      const data = await api("/api/steamcmd");
+      if (!input.value) input.value = data.default_directory || "";
+      if (data.found) status.textContent = "見つかりました: " + data.path;
+      else status.textContent = "SteamCMD はまだありません。Valve 公式からダウンロードできます。";
+      if (data.looks_like_steam_client) {
+        status.textContent += " Steam クライアントで入れた PalServer に見えます。SteamCMD での更新は、専用サーバー用のフォルダ向けです。";
+      }
+    }
+
+    async function browseFolder(input) {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.browse_folder) {
+        const path = await window.pywebview.api.browse_folder();
+        if (path) input.value = path;
+      }
+    }
+
+    document.getElementById("steamcmd-browse").addEventListener("click", () => {
+      browseFolder(document.getElementById("steamcmd-dir"));
+    });
+
+    document.getElementById("steamcmd-install").addEventListener("click", async () => {
+      const log = document.getElementById("steamcmd-log");
+      log.classList.remove("error");
+      log.textContent = "ダウンロード中です… 初回は数分かかることがあります。";
+      try {
+        const data = await api("/api/steamcmd/install", {
+          method: "POST",
+          body: JSON.stringify({ directory: document.getElementById("steamcmd-dir").value }),
+          timeoutMs: 7200000,
+        });
+        log.textContent = data.message;
+        await refreshSteamcmd();
+      } catch (err) {
+        log.classList.add("error");
+        log.textContent = err.message;
+      }
+    });
+
+    document.getElementById("shutdown").addEventListener("click", async () => {
+      const ok = await confirmAsync("管理ツールを終了しますか？ ゲームサーバー本体は止まりません。", {
+        ok: "終了する",
+        cancel: "キャンセル",
+      });
+      if (!ok) return;
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.close_app) {
+        window.pywebview.api.close_app();
+        return;
+      }
+      try {
+        await api("/api/shutdown", { method: "POST", body: "{}", timeoutMs: 2000 });
+        document.body.innerHTML = "<p class='lede' style='padding:24px'>管理ツールを終了しました。このタブを閉じてください。</p>";
+      } catch (err) {
+        document.body.innerHTML = "<p class='lede' style='padding:24px'>終了できませんでした: " + esc(err.message) + "</p>";
+      }
+    });
+
+    refresh().catch((err) => {
+      document.getElementById("servers").textContent = "管理パネルに接続できません: " + err.message;
+    });
+    refreshSteamcmd().catch((err) => {
+      document.getElementById("steamcmd-status").textContent = "SteamCMD の状態を読み込めません: " + err.message;
+    });
+    loadDiscord().catch(() => {});
+    pumpAppLog();
+    setInterval(pumpAppLog, 2000);
+    setInterval(() => { refresh().catch(() => {}); }, 15000);
+  </script>
+</body>
+</html>

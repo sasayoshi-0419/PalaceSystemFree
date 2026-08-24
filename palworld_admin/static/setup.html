@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>初回セットアップ — Home Server Admin</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css?v=7">
+</head>
+<body>
+  <main class="setup">
+    <div class="setup-hero">
+      <p class="kicker">Setup</p>
+      <h1 id="hero-title">初回セットアップ</h1>
+      <p class="lede" id="hero-lede">PalServer フォルダと管理用パスワードを指定すると、この PC 用の設定を作ります。ゲーム本体は同梱していません。</p>
+      <p class="unofficial">非公式です。Pocketpair / Palworld とは無関係です。</p>
+      <p class="log error" id="error"></p>
+    </div>
+    <div class="steps" aria-hidden="true" id="steps">
+      <span class="on" id="step-bar-1"></span>
+      <span id="step-bar-2"></span>
+    </div>
+
+    <section class="card" id="step-1">
+      <h3 id="step-1-title">サーバー</h3>
+      <p class="hint" id="choice-hint">PalServer を探しています…</p>
+      <div id="pal-choices" class="choice-list" hidden></div>
+      <div class="field">
+        <label for="palserver" id="pal-label">PalServer フォルダ</label>
+        <div class="row">
+          <input id="palserver" class="grow" placeholder="候補を選ぶか、フォルダを指定してください">
+          <button type="button" class="btn" id="browse">参照</button>
+        </div>
+      </div>
+      <div class="setup-only">
+        <div class="field">
+          <label for="name">表示名</label>
+          <input id="name" value="本鯖">
+        </div>
+        <div class="row">
+          <div class="field grow">
+            <label for="game-port">ゲームポート</label>
+            <input id="game-port" value="8211">
+          </div>
+          <div class="field grow">
+            <label for="rest-port">REST API ポート</label>
+            <input id="rest-port" value="8212">
+          </div>
+        </div>
+        <div class="field">
+          <label for="password">AdminPassword</label>
+          <input id="password" type="password" autocomplete="new-password">
+          <p class="hint">REST API 用の管理パスワードです。友達がサーバーに入るときに使うものではありません。PalWorldSettings.ini の AdminPassword と同じ値になります。</p>
+        </div>
+        <div class="row actions">
+          <button type="button" class="btn primary" id="next">次へ</button>
+        </div>
+      </div>
+      <div class="row actions hidden" id="choose-actions">
+        <button type="button" class="btn primary" id="choose-save">このフォルダで起動</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="step-2">
+      <h3>友達の入り方と定時再起動</h3>
+      <div class="field">
+        <label for="join-info">友達の入り方</label>
+        <input id="join-info" placeholder="Steam のサーバーブラウザ、または専用サーバー接続で 203.0.113.10:8211">
+        <p class="hint">Discord の /join に出ます。グローバル IP とゲームポート。空なら未設定です。127.0.0.1 は自分の PC からしか使えません。</p>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="restart-enabled" checked> 定時再起動</label>
+        <div class="row" style="margin-top:8px">
+          <input type="time" id="restart-time" value="05:00">
+        </div>
+        <p class="hint">この管理ツールを開いている間だけ実行します。</p>
+      </div>
+      <h3 style="margin-top:20px">Discord（任意）</h3>
+      <p class="lede">友達への状況通知だけです。起動・停止は Discord からはできません。</p>
+      <details class="guide">
+        <summary><strong>ボットの作り方</strong></summary>
+        <p>トークンと ID は Discord の画面からコピーしてください。このツールが Discord アカウントを作ることはありません。</p>
+        <ol>
+          <li><a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord Developer Portal</a> で Application を作り、Bot を追加します。Reset Token でトークンをコピーし、下の DISCORD_TOKEN に貼ってください。他人には見せないでください。</li>
+          <li>Discord のユーザー設定 → 詳細設定 → 開発者モード をオンにします。</li>
+          <li>通知したいサーバーの <strong>名前</strong> を右クリック → 「ID をコピー」。これがサーバー ID（guild_id）です。チャンネルの ID ではありません。</li>
+          <li>状況を出したいテキストチャンネルを右クリック → 「ID をコピー」（状況チャンネル）。通知を別チャンネルにするなら、通知チャンネルの ID もコピーします。</li>
+          <li>自分のユーザー名を右クリック → 「ID をコピー」（<code>/announce</code> 用。空のままでも保存できます）。</li>
+          <li>保存すると管理画面の Discord に「ボットをサーバーに招待」が出ます。このツールがトークンから招待 URL を作ります。Developer Portal の OAuth2 → URL Generator で URL を作る必要はありません。リンクには最初から Scopes の <code>bot</code> と <code>applications.commands</code>、権限（チャンネルを見る・メッセージ送信・埋め込み・履歴の閲覧）が入っています。</li>
+          <li>自分で URL を作る場合だけ: Portal の OAuth2 → URL Generator で Scopes の <code>bot</code> と <code>applications.commands</code> の両方にチェックし、Bot Permissions で上の 4 つを入れて Generate URL します。<code>applications.commands</code> が無いとスラッシュコマンドが <code>Missing Access</code> になります。</li>
+          <li><code>Missing Access</code> なら、サーバーからボットをキックして、同じ招待 URL で入れ直してください。</li>
+          <li>Discord からゲームサーバーの起動・停止はできません。状況の通知だけです。</li>
+        </ol>
+      </details>
+      <label class="toggle" style="margin:12px 0">
+        <input type="checkbox" id="use-discord"> ボットも設定する
+      </label>
+      <div id="discord-fields" class="hidden">
+        <div class="field"><label for="token">DISCORD_TOKEN</label><input id="token" type="password" autocomplete="off"></div>
+        <div class="field"><label for="guild">サーバー ID (guild_id)</label><input id="guild"></div>
+        <div class="field"><label for="status">状況チャンネル ID</label><input id="status"></div>
+        <div class="field"><label for="notify">通知チャンネル ID</label><input id="notify" placeholder="空欄なら状況チャンネルと同じ"></div>
+        <div class="field"><label for="owner">あなたのユーザー ID</label><input id="owner"></div>
+      </div>
+      <div class="row actions">
+        <button type="button" class="btn" id="back">戻る</button>
+        <button type="button" class="btn primary" id="save">書き出して起動</button>
+      </div>
+    </section>
+  </main>
+  <script>
+    const palInput = document.getElementById("palserver");
+    let setupMode = "setup";
+    let mustChoose = false;
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    function showStep(step) {
+      document.getElementById("step-1").classList.toggle("hidden", step !== 1);
+      document.getElementById("step-2").classList.toggle("hidden", step !== 2);
+      document.getElementById("step-bar-2").classList.toggle("on", step === 2);
+    }
+
+    function samePath(a, b) {
+      return String(a || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
+        === String(b || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    }
+
+    function selectChoice(button, path) {
+      document.querySelectorAll("#pal-choices .choice").forEach((el) => el.classList.remove("selected"));
+      if (button) button.classList.add("selected");
+      palInput.value = path;
+    }
+
+    function requirePalserver() {
+      if (palInput.value.trim()) return true;
+      document.getElementById("error").textContent = mustChoose
+        ? "候補が複数あります。使うフォルダをクリックして選んでください。"
+        : "PalServer フォルダを指定してください";
+      return false;
+    }
+
+    function renderChoices(data) {
+      const box = document.getElementById("pal-choices");
+      const hint = document.getElementById("choice-hint");
+      const candidates = data.candidates || (data.palservers || []).map((path) => ({ path, label: "PalServer フォルダ", has_saves: false }));
+      mustChoose = Boolean(data.must_choose) && candidates.length > 1;
+      box.innerHTML = "";
+      if (!candidates.length) {
+        box.hidden = true;
+        hint.classList.remove("hidden");
+        hint.textContent = "PalServer が見つかりません。Steam のツールから Palworld Dedicated Server を入れてから、フォルダを参照してください。このツールにはゲーム本体は入っていません。";
+        return;
+      }
+      box.hidden = false;
+      if (candidates.length > 1) {
+        hint.classList.remove("hidden");
+        hint.textContent = "PalServer が複数見つかりました。セーブと設定があるフォルダを 1 つ選んでください。見つかった順に自動では使いません。";
+      } else {
+        hint.classList.add("hidden");
+      }
+      candidates.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "choice";
+        btn.dataset.path = item.path;
+        const saves = item.has_saves ? '<span class="meta">セーブデータあり</span>' : "";
+        btn.innerHTML = `<span class="title"></span><span class="path"></span>${saves}`;
+        btn.querySelector(".title").textContent = item.label || "PalServer フォルダ";
+        btn.querySelector(".path").textContent = item.path;
+        btn.addEventListener("click", () => {
+          document.getElementById("error").textContent = "";
+          selectChoice(btn, item.path);
+        });
+        box.appendChild(btn);
+      });
+      if (candidates.length === 1) {
+        selectChoice(box.firstElementChild, candidates[0].path);
+      }
+    }
+
+    function applyChooseMode(data) {
+      const many = (data.candidates || data.palservers || []).length > 1;
+      document.title = "サーバーファイルを選ぶ — Home Server Admin";
+      document.getElementById("hero-title").textContent = "サーバーファイルを選ぶ";
+      document.getElementById("hero-lede").textContent = many
+        ? "この PC に PalServer が複数あります。選んだフォルダのセーブと PalWorldSettings.ini を使います。"
+        : "設定に書いた PalServer フォルダが見つかりません。使うフォルダを選んでください。";
+      document.getElementById("step-1-title").textContent = "使う PalServer フォルダ";
+      document.getElementById("pal-label").textContent = "選んだフォルダ";
+      document.getElementById("steps").classList.add("hidden");
+      document.querySelectorAll(".setup-only").forEach((el) => el.classList.add("hidden"));
+      document.getElementById("choose-actions").classList.remove("hidden");
+      document.getElementById("step-2").classList.add("hidden");
+    }
+
+    async function submitSetup() {
+      const error = document.getElementById("error");
+      error.textContent = "";
+      if (!requirePalserver()) return;
+      try {
+        const payload = setupMode === "choose"
+          ? { palserver: palInput.value }
+          : {
+              palserver: palInput.value,
+              name: document.getElementById("name").value,
+              game_port: document.getElementById("game-port").value,
+              rest_port: document.getElementById("rest-port").value,
+              password: document.getElementById("password").value,
+              join_info: document.getElementById("join-info").value,
+              restart_enabled: document.getElementById("restart-enabled").checked,
+              restart_time: document.getElementById("restart-time").value,
+              discord: document.getElementById("use-discord").checked,
+              discord_token: document.getElementById("token").value,
+              guild_id: document.getElementById("guild").value,
+              status_channel_id: document.getElementById("status").value,
+              notify_channel_id: document.getElementById("notify").value,
+              owner_user_id: document.getElementById("owner").value,
+            };
+        const data = await api("/api/setup", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.finish) {
+          error.classList.remove("error");
+          error.textContent = "設定しました。管理画面を開いています…";
+          document.getElementById("save").disabled = true;
+          document.getElementById("choose-save").disabled = true;
+          let result = await window.pywebview.api.finish(true);
+          if (typeof result === "string") {
+            try { result = JSON.parse(result); } catch (_e) { result = { url: result }; }
+          }
+          if (result && result.error) {
+            error.classList.add("error");
+            error.textContent = result.error;
+            document.getElementById("save").disabled = false;
+            document.getElementById("choose-save").disabled = false;
+            return;
+          }
+          if (result && result.url && !result.pending) {
+            window.location.replace(result.url);
+            return;
+          }
+          return;
+        } else {
+          error.textContent = data.message + " アプリを再起動してください。";
+        }
+      } catch (err) {
+        error.textContent = err.message;
+      }
+    }
+
+    document.getElementById("use-discord").addEventListener("change", (event) => {
+      document.getElementById("discord-fields").classList.toggle("hidden", !event.target.checked);
+    });
+    document.getElementById("next").addEventListener("click", () => {
+      document.getElementById("error").textContent = "";
+      if (!requirePalserver()) return;
+      if (!document.getElementById("password").value.trim()) {
+        document.getElementById("error").textContent = "AdminPassword を入力してください";
+        showStep(1);
+        return;
+      }
+      showStep(2);
+    });
+    document.getElementById("back").addEventListener("click", () => showStep(1));
+    document.getElementById("browse").addEventListener("click", async () => {
+      if (window.pywebview && window.pywebview.api) {
+        const path = await window.pywebview.api.browse_folder();
+        if (path) {
+          document.getElementById("error").textContent = "";
+          selectChoice(null, path);
+          [...document.querySelectorAll("#pal-choices .choice")].forEach((el) => {
+            if (samePath(el.dataset.path, path)) el.classList.add("selected");
+          });
+        }
+      }
+    });
+    palInput.addEventListener("input", () => {
+      const path = palInput.value;
+      document.querySelectorAll("#pal-choices .choice").forEach((el) => {
+        el.classList.toggle("selected", samePath(el.dataset.path, path));
+      });
+    });
+    document.getElementById("save").addEventListener("click", submitSetup);
+    document.getElementById("choose-save").addEventListener("click", submitSetup);
+
+    api("/api/setup/detect").then((data) => {
+      setupMode = data.mode || "setup";
+      if (setupMode === "choose") applyChooseMode(data);
+      renderChoices(data);
+    }).catch(() => {
+      document.getElementById("choice-hint").classList.add("hidden");
+    });
+  </script>
+</body>
+</html>
