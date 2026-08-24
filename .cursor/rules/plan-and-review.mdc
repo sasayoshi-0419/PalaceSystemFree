@@ -1,0 +1,10 @@
+---
+description: 製品コードの実装は Composer 2.5。他モデルは指示とレビューのみ
+alwaysApply: true
+---
+
+製品の実装担当は Cursor の **Composer 2.5**（Composer 2.5 Fast を含む）だけ。
+
+- 自分が Composer 2.5 / Composer 2.5 Fast なら、`.cursor/skills/project-bootstrap/SKILL.md` を読んだうえで実装してよい。
+- それ以外のモデルは `.cursor/skills/plan-and-review/SKILL.md` に従い、実装指示とレビューだけ行う。`palworld_admin/`、`palworld_discord_bot/`、`packaging/`、bat、通常のテストは編集しない。
+- 利用者が「このチャットで実装して」と明示したときだけ例外。

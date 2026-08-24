@@ -1,0 +1,56 @@
+# コピーして config.yaml として使う。
+# REST API も管理パネルもインターネットに公開しない。
+#
+# Windows の process 例（パスは / を使う。二重引用符の中の C:\ は YAML エラーになります）:
+#   working_directory: "C:/SteamCMD/steamapps/common/PalServer"
+#   start_command:
+#     - PalServer.exe
+#     - -port=8211
+#     - -useperfthreads
+#     - -NoAsyncLoadingThread
+#     - -UseMultithreadForDS
+#   settings_file: Pal/Saved/Config/WindowsServer/PalWorldSettings.ini
+# PalServer.sh は Linux 専用です。Windows では PalServer.exe を使ってください。
+
+admin:
+  bind: 127.0.0.1
+  port: 8787
+  allow_lan: false
+
+# 状況通知ボットを使うときだけ書く。管理ツールだけなら省略可。
+discord:
+  guild_id: 123456789012345678
+  status_channel_id: 123456789012345678
+  notify_channel_id: 123456789012345678
+  notify_role_id: null
+  owner_user_ids:
+    - 123456789012345678
+  poll_interval_seconds: 20
+
+servers:
+  - id: main
+    name: 本鯖
+    rest_url: http://127.0.0.1:8212
+    admin_password_env: PAL_MAIN_ADMIN_PASSWORD
+    join_info: "Steam のサーバーブラウザ、または専用サーバー接続で `203.0.113.10:8211`"
+    process:
+      working_directory: /home/steam/Steam/steamapps/common/PalServer
+      start_command: "./PalServer.sh -port=8211 -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"
+      settings_file: Pal/Saved/Config/LinuxServer/PalWorldSettings.ini
+      world_option_sav: null
+      start_timeout_seconds: 180
+      stop_timeout_seconds: 90
+    restart_schedule:
+      time: "05:00"
+      timezone: Asia/Tokyo
+      warn_seconds: 120
+      message: "定時再起動します"
+  - id: event
+    name: イベント鯖
+    rest_url: http://127.0.0.1:8222
+    admin_password_env: PAL_EVENT_ADMIN_PASSWORD
+    join_info: "専用サーバー接続で `203.0.113.10:8221`"
+    process:
+      working_directory: /home/steam/Steam/steamapps/common/PalServerEvent
+      start_command: "./PalServer.sh -port=8221 -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"
+      settings_file: Pal/Saved/Config/LinuxServer/PalWorldSettings.ini

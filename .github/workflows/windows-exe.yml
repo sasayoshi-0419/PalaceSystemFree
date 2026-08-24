@@ -1,0 +1,37 @@
+name: Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "palworld_admin/**"
+      - "palworld_discord_bot/**"
+      - "packaging/**"
+      - "pyproject.toml"
+      - "build-windows.bat"
+      - ".github/workflows/windows-exe.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install and build
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[package]"
+          if (Test-Path "dist/_pyi") {
+            Remove-Item -Recurse -Force "dist/_pyi"
+          }
+          python -m PyInstaller packaging/home_server_admin.spec --noconfirm --distpath dist/_pyi --workpath build
+          python packaging/prepare_windows_dist.py dist
+          if (-not (Test-Path "dist/HomeServerAdmin/HomeServerAdmin.exe")) {
+            throw "HomeServerAdmin.exe was not created"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HomeServerAdmin-windows
+          path: dist/HomeServerAdmin
