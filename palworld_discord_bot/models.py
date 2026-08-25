@@ -49,9 +49,11 @@ class ServerSnapshot:
     display_name: str
     online: bool
     error: str | None = None
+    error_kind: str | None = None
     info: ServerInfo | None = None
     metrics: ServerMetrics | None = None
     players: tuple[Player, ...] = ()
+    players_incomplete: bool = False
     join_info: str = ""
 
     @property
