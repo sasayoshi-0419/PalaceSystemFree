@@ -131,14 +131,14 @@ class StatusCog(commands.Cog):
         try:
             async with self._lock:
                 raw = await self._poll()
-                self._stabilizer_state, logical, diff_baseline = stabilize_snapshots(
+                self._stabilizer_state, logical, diff_baseline, next_previous = stabilize_snapshots(
                     self._stabilizer_state,
                     self._previous,
                     raw,
                     poll_interval_seconds=self._discord().poll_interval_seconds,
                 )
                 diff = diff_snapshots(diff_baseline, logical)
-                self._previous = logical
+                self._previous = next_previous
                 self._latest = logical
                 snapshots = [logical[server.id] for server in self.bot.config.servers]
                 await self._update_status_message(snapshots)

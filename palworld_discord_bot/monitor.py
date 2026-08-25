@@ -11,6 +11,7 @@ REFUSED_OFFLINE_THRESHOLD = 2
 class StabilizerState:
     consecutive_refused: dict[str, int] = field(default_factory=dict)
     last_uptime_seconds: dict[str, int | None] = field(default_factory=dict)
+    has_baseline: dict[str, bool] = field(default_factory=dict)
 
 
 def _merge_players(raw: ServerSnapshot, previous: ServerSnapshot | None) -> ServerSnapshot:
@@ -39,7 +40,11 @@ def _uptime_reset(
 def _uptime_continued(last_uptime: int | None, current_uptime: int | None) -> bool:
     if last_uptime is None or current_uptime is None:
         return False
-    return current_uptime > last_uptime
+    return current_uptime >= last_uptime
+
+
+def _mark_baseline(state: StabilizerState, server_id: str) -> None:
+    state.has_baseline[server_id] = True
 
 
 def stabilize_snapshots(
@@ -48,13 +53,21 @@ def stabilize_snapshots(
     raw: dict[str, ServerSnapshot],
     *,
     poll_interval_seconds: int = 20,
-) -> tuple[StabilizerState, dict[str, ServerSnapshot], dict[str, ServerSnapshot] | None]:
-    """Return stabilizer state, logical snapshots, and the diff baseline for diff_snapshots."""
+) -> tuple[
+    StabilizerState,
+    dict[str, ServerSnapshot],
+    dict[str, ServerSnapshot] | None,
+    dict[str, ServerSnapshot] | None,
+]:
+    """Return stabilizer state, logical snapshots, diff baseline, and next previous."""
     new_state = StabilizerState(
         consecutive_refused=dict(state.consecutive_refused) if state else {},
         last_uptime_seconds=dict(state.last_uptime_seconds) if state else {},
+        has_baseline=dict(state.has_baseline) if state else {},
     )
     if previous:
+        for server_id in previous:
+            new_state.has_baseline[server_id] = True
         for server_id, snap in previous.items():
             if snap.online and snap.metrics and snap.metrics.uptime_seconds is not None:
                 new_state.last_uptime_seconds.setdefault(
@@ -77,6 +90,7 @@ def stabilize_snapshots(
             if merged.metrics and merged.metrics.uptime_seconds is not None:
                 new_state.last_uptime_seconds[server_id] = merged.metrics.uptime_seconds
             logical[server_id] = merged
+            _mark_baseline(new_state, server_id)
 
             if prev and not prev_online:
                 if _uptime_continued(last_up, cur_up) and not _uptime_reset(
@@ -89,11 +103,13 @@ def stabilize_snapshots(
             if kind == "auth":
                 new_state.consecutive_refused[server_id] = 0
                 logical[server_id] = raw_snap
+                _mark_baseline(new_state, server_id)
             elif kind == "refused":
                 count = new_state.consecutive_refused.get(server_id, 0) + 1
                 new_state.consecutive_refused[server_id] = count
                 if count >= REFUSED_OFFLINE_THRESHOLD:
                     logical[server_id] = raw_snap
+                    _mark_baseline(new_state, server_id)
                 elif prev and prev_online:
                     logical[server_id] = prev
                 else:
@@ -105,7 +121,17 @@ def stabilize_snapshots(
                 else:
                     logical[server_id] = raw_snap
 
-    return new_state, logical, diff_baseline
+    next_previous = {
+        server_id: snap
+        for server_id, snap in logical.items()
+        if new_state.has_baseline.get(server_id)
+    }
+    return (
+        new_state,
+        logical,
+        diff_baseline,
+        next_previous or None,
+    )
 
 
 def diff_snapshots(

@@ -41,14 +41,14 @@ def _stabilized_events(
     poll_interval_seconds: int = 20,
     state=None,
 ):
-    new_state, logical, diff_baseline = stabilize_snapshots(
+    new_state, logical, diff_baseline, next_previous = stabilize_snapshots(
         state,
         previous,
         raw,
         poll_interval_seconds=poll_interval_seconds,
     )
     diff = diff_snapshots(diff_baseline, logical)
-    return new_state, logical, diff.events
+    return new_state, logical, diff.events, next_previous
 
 
 def test_parse_info_and_metrics() -> None:
@@ -141,12 +141,12 @@ def test_transient_timeout_does_not_emit_down_or_up() -> None:
             error_kind="timeout",
         )
     }
-    state, logical, events = _stabilized_events(online, timeout)
+    state, logical, events, _ = _stabilized_events(online, timeout)
     assert logical["main"].online
     assert events == ()
 
     recovered = {"main": _snapshot("main", online=True, players=(alice,), uptime_seconds=520)}
-    _, logical2, events2 = _stabilized_events(logical, recovered, state=state)
+    _, logical2, events2, _ = _stabilized_events(logical, recovered, state=state)
     assert logical2["main"].online
     assert events2 == ()
 
@@ -162,7 +162,7 @@ def test_single_refused_does_not_emit_server_down() -> None:
             error_kind="refused",
         )
     }
-    _, logical, events = _stabilized_events(online, refused)
+    _, logical, events, _ = _stabilized_events(online, refused)
     assert logical["main"].online
     assert events == ()
 
@@ -178,9 +178,9 @@ def test_double_refused_emits_server_down() -> None:
             error_kind="refused",
         )
     }
-    state, logical, events = _stabilized_events(online, refused)
+    state, logical, events, prev = _stabilized_events(online, refused)
     assert events == ()
-    _, logical2, events2 = _stabilized_events(logical, refused, state=state)
+    _, logical2, events2, _ = _stabilized_events(prev, refused, state=state)
     assert not logical2["main"].online
     assert [event.kind for event in events2] == ["server_down"]
 
@@ -196,12 +196,12 @@ def test_recovery_with_continued_uptime_suppresses_server_up() -> None:
             error_kind="refused",
         )
     }
-    state, logical, _ = _stabilized_events(online, refused)
-    state, logical, _ = _stabilized_events(logical, refused, state=state)
+    state, logical, _, prev = _stabilized_events(online, refused)
+    state, logical, _, prev = _stabilized_events(prev, refused, state=state)
     assert not logical["main"].online
 
     recovered = {"main": _snapshot("main", online=True, uptime_seconds=10040)}
-    _, logical2, events = _stabilized_events(logical, recovered, state=state)
+    _, logical2, events, _ = _stabilized_events(prev, recovered, state=state)
     assert logical2["main"].online
     assert events == ()
 
@@ -217,10 +217,10 @@ def test_recovery_with_reset_uptime_emits_server_up() -> None:
             error_kind="refused",
         )
     }
-    state, logical, _ = _stabilized_events(online, refused)
-    state, logical, _ = _stabilized_events(logical, refused, state=state)
+    state, logical, _, prev = _stabilized_events(online, refused)
+    state, logical, _, prev = _stabilized_events(prev, refused, state=state)
     recovered = {"main": _snapshot("main", online=True, uptime_seconds=12)}
-    _, _, events = _stabilized_events(logical, recovered, state=state)
+    _, _, events, _ = _stabilized_events(prev, recovered, state=state)
     assert [event.kind for event in events] == ["server_up"]
 
 
@@ -236,6 +236,47 @@ def test_players_incomplete_does_not_emit_player_leave() -> None:
             players_incomplete=True,
         )
     }
-    _, logical, events = _stabilized_events(before, incomplete)
+    _, logical, events, _ = _stabilized_events(before, incomplete)
     assert logical["main"].players == (alice,)
+    assert events == ()
+
+
+def test_first_timeout_then_online_emits_no_events() -> None:
+    timeout = {
+        "main": ServerSnapshot(
+            server_id="main",
+            display_name="本鯖",
+            online=False,
+            error="timeout",
+            error_kind="timeout",
+        )
+    }
+    state, _, events, prev = _stabilized_events(None, timeout)
+    assert events == ()
+    assert prev is None
+
+    online = {"main": _snapshot("main", online=True, uptime_seconds=100)}
+    _, logical2, events2, prev2 = _stabilized_events(prev, online, state=state)
+    assert logical2["main"].online
+    assert events2 == ()
+    assert prev2 is not None
+
+
+def test_recovery_with_equal_uptime_suppresses_server_up() -> None:
+    online = {"main": _snapshot("main", online=True, uptime_seconds=10000)}
+    refused = {
+        "main": ServerSnapshot(
+            server_id="main",
+            display_name="本鯖",
+            online=False,
+            error="refused",
+            error_kind="refused",
+        )
+    }
+    state, logical, _, prev = _stabilized_events(online, refused)
+    state, logical, _, prev = _stabilized_events(prev, refused, state=state)
+    assert not logical["main"].online
+
+    recovered = {"main": _snapshot("main", online=True, uptime_seconds=10000)}
+    _, _, events, _ = _stabilized_events(prev, recovered, state=state)
     assert events == ()

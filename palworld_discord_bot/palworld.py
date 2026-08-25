@@ -39,12 +39,29 @@ def _as_float(value: Any) -> float:
         return 0.0
 
 
-def _is_connection_refused(exc: httpx.ConnectError) -> bool:
-    for cause in (exc.__cause__, exc.__context__):
-        if isinstance(cause, ConnectionRefusedError):
+_WSAECONNREFUSED = getattr(errno, "WSAECONNREFUSED", 10061)
+
+
+def _is_errno_connection_refused(err: int | None) -> bool:
+    return err in (errno.ECONNREFUSED, _WSAECONNREFUSED)
+
+
+def _exception_denotes_refused(exc: BaseException) -> bool:
+    if isinstance(exc, ConnectionRefusedError):
+        return True
+    if isinstance(exc, OSError) and _is_errno_connection_refused(exc.errno):
+        return True
+    return False
+
+
+def _is_connection_refused(exc: BaseException) -> bool:
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if _exception_denotes_refused(current):
             return True
-        if isinstance(cause, OSError) and cause.errno == errno.ECONNREFUSED:
-            return True
+        current = current.__cause__ or current.__context__
     return False
 
 

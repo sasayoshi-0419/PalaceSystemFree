@@ -157,3 +157,12 @@ async def test_snapshot_info_refused_sets_error_kind() -> None:
     await client.aclose()
     assert not snapshot.online
     assert snapshot.error_kind == "refused"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_info_refused_on_real_connection_refused() -> None:
+    client = PalworldClient("http://127.0.0.1:1", "secret-pass", timeout=2.0)
+    snapshot = await client.snapshot("main", "本鯖")
+    await client.aclose()
+    assert not snapshot.online
+    assert snapshot.error_kind == "refused"
