@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Home Server Admin</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/app.css?v=7">
+  <link rel="stylesheet" href="/app.css?v=8">
 </head>
 <body>
   <div class="shell">
@@ -19,6 +19,7 @@
       </div>
       <nav class="nav">
         <button type="button" class="active" data-nav="servers">サーバー</button>
+        <button type="button" data-nav="map">マップ</button>
         <button type="button" data-nav="steamcmd">SteamCMD</button>
         <button type="button" data-nav="discord">Discord</button>
         <button type="button" data-nav="logs">ログ</button>
@@ -40,6 +41,40 @@
 
       <section class="panel active" id="panel-servers">
         <div id="servers"></div>
+      </section>
+
+      <section class="panel" id="panel-map">
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h3>マップ</h3>
+              <p class="lede">オンラインのプレイヤーとギルド拠点の位置です。非公式の概略図です。</p>
+            </div>
+          </div>
+          <div class="row map-controls">
+            <label class="field-inline">
+              <span>サーバー</span>
+              <select id="map-server"></select>
+            </label>
+            <label class="toggle"><input type="checkbox" id="map-layer-players" checked> プレイヤー</label>
+            <label class="toggle"><input type="checkbox" id="map-layer-bases" checked> 拠点</label>
+            <button type="button" class="btn" id="map-refresh">更新</button>
+          </div>
+          <p id="map-status" class="hint hidden"></p>
+          <div class="worldmap-wrap">
+            <div class="worldmap-stage" id="worldmap-stage" aria-label="非公式の概略マップ">
+              <div class="worldmap-bg" aria-hidden="true"></div>
+              <div class="worldmap-markers" id="worldmap-markers"></div>
+            </div>
+            <p class="worldmap-caption">非公式の概略図。Pocketpair / Palworld の地図ではありません。</p>
+            <aside class="worldmap-side">
+              <h4>プレイヤー</h4>
+              <ul class="worldmap-list" id="map-player-list"></ul>
+              <h4>拠点</h4>
+              <ul class="worldmap-list" id="map-base-list"></ul>
+            </aside>
+          </div>
+        </article>
       </section>
 
       <section class="panel" id="panel-steamcmd">
@@ -135,6 +170,7 @@
   <script>
     const titles = {
       servers: ["サーバー", "起動・停止・設定・更新をこの画面で行えます。"],
+      map: ["マップ", "オンラインのプレイヤーとギルド拠点の位置です。非公式の概略図です。"],
       steamcmd: ["SteamCMD", "専用サーバーの導入ツールです。PalServer は同梱していません。"],
       discord: ["Discord", "友達への状況通知だけです。起動・停止は Discord からはできません。"],
       logs: ["ログ", "コマンドプロンプトの代わりに、この画面の記録を見てください。"],
@@ -186,7 +222,13 @@
       });
     }
 
+    let mapPollTimer = null;
+
     function setNav(name) {
+      if (mapPollTimer) {
+        clearInterval(mapPollTimer);
+        mapPollTimer = null;
+      }
       document.querySelectorAll("[data-nav]").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.nav === name);
       });
@@ -197,6 +239,11 @@
       document.getElementById("page-title").textContent = title;
       document.getElementById("page-lede").textContent = lede;
       if (name === "discord") loadDiscord().catch(() => {});
+      if (name === "map") {
+        loadMapServers().catch(() => {});
+        refreshMap().catch(() => {});
+        mapPollTimer = setInterval(() => { refreshMap().catch(() => {}); }, 8000);
+      }
     }
 
     document.querySelectorAll("[data-nav]").forEach((btn) => {
@@ -733,6 +780,91 @@
 
     document.getElementById("steamcmd-browse").addEventListener("click", () => {
       browseFolder(document.getElementById("steamcmd-dir"));
+    });
+
+    async function loadMapServers() {
+      const select = document.getElementById("map-server");
+      const data = await api("/api/servers");
+      const servers = data.servers || [];
+      const current = select.value;
+      select.innerHTML = servers.map((server) =>
+        `<option value="${esc(server.id)}">${esc(server.name)} / ${esc(server.id)}</option>`
+      ).join("");
+      if (current && servers.some((server) => server.id === current)) {
+        select.value = current;
+      }
+    }
+
+    function mapStatusText(data) {
+      if (data.status === "auth") return "REST API の認証に失敗しました。拠点だけ表示している場合があります。";
+      if (data.status === "offline") return "サーバーはオフラインです。拠点は最後に保存された Level.sav から読み取ります。";
+      if (data.players_error) return data.players_error;
+      if (data.bases_error) return data.bases_error;
+      return "";
+    }
+
+    function renderMap(data) {
+      const statusEl = document.getElementById("map-status");
+      const markersEl = document.getElementById("worldmap-markers");
+      const playerList = document.getElementById("map-player-list");
+      const baseList = document.getElementById("map-base-list");
+      const showPlayers = document.getElementById("map-layer-players").checked;
+      const showBases = document.getElementById("map-layer-bases").checked;
+      const statusText = mapStatusText(data);
+      statusEl.textContent = statusText;
+      statusEl.classList.toggle("hidden", !statusText);
+
+      const markerParts = [];
+      if (showPlayers) {
+        for (const player of data.players || []) {
+          const label = player.name || player.user_id || player.player_id || "プレイヤー";
+          markerParts.push(
+            `<button type="button" class="worldmap-marker player" style="left:${player.left}%;top:${player.top}%" title="${esc(label)} (Lv${player.level})" aria-label="${esc(label)}"></button>`
+          );
+        }
+      }
+      if (showBases) {
+        for (const base of data.bases || []) {
+          const label = base.guild || "拠点";
+          markerParts.push(
+            `<button type="button" class="worldmap-marker base" style="left:${base.left}%;top:${base.top}%" title="${esc(label)}" aria-label="${esc(label)}"></button>`
+          );
+        }
+      }
+      markersEl.innerHTML = markerParts.join("");
+
+      playerList.innerHTML = (data.players || []).map((player) => {
+        const label = player.name || player.user_id || player.player_id || "プレイヤー";
+        return `<li>${esc(label)} <span class="muted">Lv${player.level}</span></li>`;
+      }).join("") || "<li class='muted'>オンラインのプレイヤーはありません</li>";
+
+      baseList.innerHTML = (data.bases || []).map((base) =>
+        `<li>${esc(base.guild || "ギルド")}</li>`
+      ).join("") || "<li class='muted'>拠点データがありません</li>";
+    }
+
+    async function refreshMap() {
+      const select = document.getElementById("map-server");
+      const serverId = select.value;
+      if (!serverId) return;
+      const data = await api(`/api/servers/${serverId}/map`);
+      renderMap(data);
+    }
+
+    document.getElementById("map-refresh").addEventListener("click", () => {
+      refreshMap().catch((err) => {
+        document.getElementById("map-status").textContent = err.message;
+        document.getElementById("map-status").classList.remove("hidden");
+      });
+    });
+    document.getElementById("map-server").addEventListener("change", () => {
+      refreshMap().catch(() => {});
+    });
+    document.getElementById("map-layer-players").addEventListener("change", () => {
+      refreshMap().catch(() => {});
+    });
+    document.getElementById("map-layer-bases").addEventListener("change", () => {
+      refreshMap().catch(() => {});
     });
 
     document.getElementById("steamcmd-install").addEventListener("click", async () => {

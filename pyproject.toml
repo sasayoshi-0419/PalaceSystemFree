@@ -16,6 +16,7 @@ dependencies = [
     "PyYAML>=6.0.2",
     "tzdata>=2024.1",
     "pywebview>=5.0",
+    "palworld-save-tools>=0.24.0",
 ]
 
 [project.optional-dependencies]

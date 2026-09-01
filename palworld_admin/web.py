@@ -23,6 +23,7 @@ from palworld_discord_bot.steamcmd import (
 )
 from palworld_discord_bot.updates import inspect_update
 from palworld_admin.runtime import AdminRuntime
+from palworld_admin.worldmap import fetch_map_data
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,13 @@ async def handle_restart(request: web.Request) -> web.Response:
     except OperationError as exc:
         return _json_error(str(exc), 409)
     return web.json_response({"ok": True, "message": f"{operator.server.name} を再起動しました"})
+
+
+async def handle_map(request: web.Request) -> web.Response:
+    operator = _operator(request, request.match_info["server_id"])
+    status = await operator.probe()
+    payload = await fetch_map_data(operator, status)
+    return web.json_response(payload)
 
 
 async def handle_settings_get(request: web.Request) -> web.Response:
@@ -436,6 +444,7 @@ def create_app(runtime: AdminRuntime, service=None, steamcmd_installer=None) -> 
     app.router.add_post("/api/servers/{server_id}/stop", handle_stop)
     app.router.add_post("/api/servers/{server_id}/restart", handle_restart)
     app.router.add_post("/api/servers/{server_id}/steam-update", handle_steam_update)
+    app.router.add_get("/api/servers/{server_id}/map", handle_map)
     app.router.add_get("/api/servers/{server_id}/settings", handle_settings_get)
     app.router.add_post("/api/servers/{server_id}/settings", handle_settings_set)
     app.router.add_post("/api/servers/{server_id}/ops", handle_server_ops)

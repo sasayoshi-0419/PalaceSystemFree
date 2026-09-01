@@ -22,6 +22,7 @@ hiddenimports = [
     "palworld_admin.setup_app",
     "palworld_admin.setup_gui",
     "palworld_admin.service",
+    "palworld_admin.worldmap",
     "palworld_discord_bot.cogs.status",
     "palworld_discord_bot.steamcmd",
     "webview",
@@ -35,7 +36,7 @@ hiddenimports = [
     "zoneinfo",
     "tzdata",
 ]
-for package in ("tzdata", "discord", "aiohttp", "httpx", "certifi", "webview"):
+for package in ("tzdata", "discord", "aiohttp", "httpx", "certifi", "webview", "palworld_save_tools"):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
     datas += pkg_datas
     binaries += pkg_binaries

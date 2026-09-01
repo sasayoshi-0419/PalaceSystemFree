@@ -1,0 +1,216 @@
+from pathlib import Path
+from unittest.mock import AsyncMock
+
+import pytest
+from aiohttp.test_utils import TestClient, TestServer
+
+from palworld_admin.runtime import AdminRuntime
+from palworld_admin.web import create_app
+from palworld_admin.worldmap import (
+    extract_bases_from_world_save,
+    get_bases_for_operator,
+    parse_map_players,
+    world_to_paldex,
+)
+from palworld_discord_bot.config import load_config
+from palworld_discord_bot.settings_ini import write_settings_file
+
+
+def _admin_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("PAL_MAIN_ADMIN_PASSWORD", "secret-pass")
+    settings = tmp_path / "PalWorldSettings.ini"
+    write_settings_file(settings, {"ExpRate": "1.000000"})
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        f"""
+admin:
+  bind: 127.0.0.1
+  port: 8787
+servers:
+  - id: main
+    name: 本鯖
+    rest_url: http://127.0.0.1:8212
+    admin_password_env: PAL_MAIN_ADMIN_PASSWORD
+    process:
+      working_directory: {tmp_path}
+      start_command: "python3 -c pass"
+      settings_file: {settings}
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_world_to_paldex_fixture() -> None:
+    paldex_x, paldex_y = world_to_paldex(-167230, 96430)
+    assert paldex_y == pytest.approx(-94, abs=1)
+    assert paldex_x == pytest.approx(-134, abs=10)
+
+
+def test_parse_map_players_keeps_locations_drops_ip() -> None:
+    players = parse_map_players(
+        {
+            "players": [
+                {
+                    "name": "Alice",
+                    "playerId": "p1",
+                    "userId": "steam_1",
+                    "level": 12,
+                    "ip": "203.0.113.9",
+                    "location_x": -167230,
+                    "location_y": 96430,
+                }
+            ]
+        }
+    )
+    assert len(players) == 1
+    assert players[0].name == "Alice"
+    assert players[0].level == 12
+    assert players[0].user_id == "steam_1"
+    assert players[0].player_id == "p1"
+    assert players[0].left > 0
+    assert players[0].top > 0
+    dumped = {
+        "name": players[0].name,
+        "level": players[0].level,
+        "user_id": players[0].user_id,
+        "player_id": players[0].player_id,
+        "left": players[0].left,
+        "top": players[0].top,
+    }
+    assert "ip" not in dumped
+
+
+def test_extract_bases_from_synthetic_world_save() -> None:
+    group_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    base_id = "11111111-2222-3333-4444-555555555555"
+    world_save = {
+        "GroupSaveDataMap": {
+            "value": [
+                {
+                    "key": group_id,
+                    "value": {
+                        "GroupType": {"value": {"value": "EPalGroupType::Guild"}},
+                        "RawData": {
+                            "value": {
+                                "group_id": group_id,
+                                "guild_name": "テストギルド",
+                                "base_ids": [base_id],
+                            }
+                        },
+                    },
+                }
+            ]
+        },
+        "BaseCampSaveData": {
+            "value": [
+                {
+                    "key": base_id,
+                    "value": {
+                        "RawData": {
+                            "value": {
+                                "id": base_id,
+                                "transform": {
+                                    "translation": {"x": -167230.0, "y": 96430.0, "z": 0.0}
+                                },
+                                "group_id_belong_to": group_id,
+                            }
+                        }
+                    },
+                }
+            ]
+        },
+    }
+    bases = extract_bases_from_world_save(world_save)
+    assert len(bases) == 1
+    assert bases[0].id == base_id
+    assert bases[0].guild == "テストギルド"
+    assert bases[0].left > 0
+    assert bases[0].top > 0
+
+
+def test_missing_sav_sets_bases_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = _admin_config(tmp_path, monkeypatch)
+    config = load_config(path, dotenv_path=None, require_discord_token=False)
+    runtime = AdminRuntime(config)
+    operator = runtime.operator("main")
+    bases, error = get_bases_for_operator(operator)
+    assert bases == []
+    assert error is not None
+    assert "Level.sav" in error
+
+
+@pytest.mark.asyncio
+async def test_map_api_returns_locations_without_ip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = _admin_config(tmp_path, monkeypatch)
+    config = load_config(path, dotenv_path=None, require_discord_token=False)
+    runtime = AdminRuntime(config)
+    operator = runtime.operator("main")
+    operator.probe = AsyncMock(return_value="online")
+    operator.client.players_payload = AsyncMock(
+        return_value={
+            "players": [
+                {
+                    "name": "Alice",
+                    "playerId": "p1",
+                    "userId": "steam_1",
+                    "level": 12,
+                    "ip": "203.0.113.9",
+                    "location_x": -167230,
+                    "location_y": 96430,
+                }
+            ]
+        }
+    )
+    operator.client.info = AsyncMock(
+        return_value=type(
+            "Info",
+            (),
+            {"world_guid": "", "name": "", "version": "", "description": ""},
+        )()
+    )
+
+    app = create_app(runtime)
+    async with TestServer(app) as server:
+        async with TestClient(server) as client:
+            resp = await client.get("/api/servers/main/map")
+            body_text = await resp.text()
+            payload = await resp.json()
+            assert resp.status == 200
+            assert payload["ok"] is True
+            assert payload["status"] == "online"
+            assert len(payload["players"]) == 1
+            assert "left" in payload["players"][0]
+            assert "top" in payload["players"][0]
+            assert "ip" not in body_text.lower()
+            assert payload["bases_error"] is not None
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_map_api_unknown_server_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = _admin_config(tmp_path, monkeypatch)
+    config = load_config(path, dotenv_path=None, require_discord_token=False)
+    runtime = AdminRuntime(config)
+    app = create_app(runtime)
+    async with TestServer(app) as server:
+        async with TestClient(server) as client:
+            resp = await client.get("/api/servers/missing/map")
+            assert resp.status == 404
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_index_html_has_map_panel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = _admin_config(tmp_path, monkeypatch)
+    config = load_config(path, dotenv_path=None, require_discord_token=False)
+    runtime = AdminRuntime(config)
+    app = create_app(runtime)
+    async with TestServer(app) as server:
+        async with TestClient(server) as client:
+            index = await client.get("/")
+            body = await index.text()
+            assert "data-nav=\"map\"" in body
+            assert "panel-map" in body
+            assert "マップ" in body
+    await runtime.close()
