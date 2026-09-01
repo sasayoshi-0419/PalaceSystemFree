@@ -293,6 +293,28 @@ async def test_map_api_unknown_server_404(tmp_path: Path, monkeypatch: pytest.Mo
     await runtime.close()
 
 
+def test_index_html_map_svg_silhouette() -> None:
+    html = Path("palworld_admin/static/index.html").read_text(encoding="utf-8")
+    assert 'viewBox="0 0 100 100"' in html
+    stage_start = html.index('class="worldmap-stage"')
+    stage_end = html.index("</div>", html.index("worldmap-markers", stage_start))
+    stage_block = html[stage_start:stage_end]
+    assert "<svg" in stage_block
+    assert "worldmap-bg" not in html
+    assert "worldmap-main" in html
+    land_shapes = stage_block.count('class="worldmap-land')
+    assert land_shapes >= 3
+
+
+def test_index_html_map_has_no_external_map_assets() -> None:
+    html = Path("palworld_admin/static/index.html").read_text(encoding="utf-8")
+    static_dir = Path("palworld_admin/static")
+    assert "http://" not in html[html.index("worldmap-stage"):html.index("worldmap-side")]
+    assert "https://" not in html[html.index("worldmap-stage"):html.index("worldmap-side")]
+    for pattern in ("*map*.png", "*map*.jpg", "*map*.webp", "*worldmap*.png", "*worldmap*.jpg", "*worldmap*.webp"):
+        assert not list(static_dir.glob(pattern)), pattern
+
+
 @pytest.mark.asyncio
 async def test_index_html_has_map_panel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = _admin_config(tmp_path, monkeypatch)

@@ -342,7 +342,7 @@ def test_index_html_settings_ui_markers() -> None:
     assert "data-custom-key" not in html
     assert "設定を読み込む" not in html
     assert "settings-panel" in html
-    assert "app.css?v=8" in html
+    assert "app.css?v=9" in html
     assert "!entry.settingsLoaded" in html
     assert "loadSettingsPanel(server.id, entry)" in html
     assert 'value="${esc(field.value)}"' in html
