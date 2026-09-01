@@ -105,6 +105,9 @@ async def test_admin_web_status_and_settings(tmp_path, monkeypatch) -> None:
             assert "作り直す必要はありません" in body
             assert "invite-wrap" in body
             assert "Discord からゲームサーバーの起動・停止はできません" in body
+            assert "data-nav=\"map\"" in body
+            assert "panel-map" in body
+            assert "マップ" in body
             css = await client.get("/app.css")
             assert css.status == 200
             assert "text/css" in css.headers.get("Content-Type", "")

@@ -181,11 +181,14 @@ class PalworldClient:
             raise PalworldAPIError("/metrics の応答形式が不正です")
         return parse_metrics(payload)
 
-    async def players(self) -> tuple[Player, ...]:
+    async def players_payload(self) -> dict[str, Any] | list[Any]:
         payload = await self._get("/players")
         if not isinstance(payload, (dict, list)):
             raise PalworldAPIError("/players の応答形式が不正です")
-        return parse_players(payload)
+        return payload
+
+    async def players(self) -> tuple[Player, ...]:
+        return parse_players(await self.players_payload())
 
     async def _post(self, path: str, json_body: dict[str, Any] | None = None) -> None:
         try:

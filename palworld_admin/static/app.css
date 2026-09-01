@@ -646,3 +646,118 @@ th, td {
   border-top: 1px solid var(--line);
   padding-top: 12px;
 }
+
+.map-controls {
+  margin-top: 8px;
+  align-items: center;
+}
+
+.field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.field-inline select {
+  min-width: 180px;
+}
+
+.worldmap-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  gap: 16px;
+  margin-top: 12px;
+  align-items: start;
+}
+
+.worldmap-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.worldmap-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 640px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #071821;
+  box-shadow: inset 0 0 42px rgba(0, 0, 0, 0.38);
+}
+
+.worldmap-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  shape-rendering: geometricPrecision;
+}
+
+.worldmap-markers {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.worldmap-marker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid rgba(7, 11, 18, 0.85);
+  border-radius: 50%;
+  cursor: default;
+  padding: 0;
+}
+
+.worldmap-marker.player {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(62, 224, 194, 0.25);
+}
+
+.worldmap-marker.base {
+  background: var(--accent-2);
+  box-shadow: 0 0 0 3px rgba(122, 162, 255, 0.25);
+  border-radius: 3px;
+}
+
+.worldmap-caption {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  max-width: 640px;
+}
+
+.worldmap-side h4 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.worldmap-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  font-size: 0.88rem;
+}
+
+.worldmap-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.worldmap-list .muted {
+  color: var(--muted);
+}
+
+@media (max-width: 860px) {
+  .worldmap-wrap {
+    grid-template-columns: 1fr;
+  }
+}
