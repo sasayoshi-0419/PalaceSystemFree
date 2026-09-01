@@ -223,6 +223,13 @@
     }
 
     let mapPollTimer = null;
+    let mapLastPayload = null;
+
+    async function activateMapPanel() {
+      await loadMapServers();
+      await refreshMap();
+      mapPollTimer = setInterval(() => { refreshMap().catch(() => {}); }, 8000);
+    }
 
     function setNav(name) {
       if (mapPollTimer) {
@@ -239,11 +246,7 @@
       document.getElementById("page-title").textContent = title;
       document.getElementById("page-lede").textContent = lede;
       if (name === "discord") loadDiscord().catch(() => {});
-      if (name === "map") {
-        loadMapServers().catch(() => {});
-        refreshMap().catch(() => {});
-        mapPollTimer = setInterval(() => { refreshMap().catch(() => {}); }, 8000);
-      }
+      if (name === "map") activateMapPanel().catch(() => {});
     }
 
     document.querySelectorAll("[data-nav]").forEach((btn) => {
@@ -804,19 +807,23 @@
     }
 
     function renderMap(data) {
+      if (data) mapLastPayload = data;
+      const payload = data || mapLastPayload;
+      if (!payload) return;
       const statusEl = document.getElementById("map-status");
       const markersEl = document.getElementById("worldmap-markers");
       const playerList = document.getElementById("map-player-list");
       const baseList = document.getElementById("map-base-list");
       const showPlayers = document.getElementById("map-layer-players").checked;
       const showBases = document.getElementById("map-layer-bases").checked;
-      const statusText = mapStatusText(data);
+      const statusText = mapStatusText(payload);
       statusEl.textContent = statusText;
       statusEl.classList.toggle("hidden", !statusText);
 
       const markerParts = [];
       if (showPlayers) {
-        for (const player of data.players || []) {
+        for (const player of payload.players || []) {
+          if (player.left == null || player.top == null) continue;
           const label = player.name || player.user_id || player.player_id || "プレイヤー";
           markerParts.push(
             `<button type="button" class="worldmap-marker player" style="left:${player.left}%;top:${player.top}%" title="${esc(label)} (Lv${player.level})" aria-label="${esc(label)}"></button>`
@@ -824,7 +831,7 @@
         }
       }
       if (showBases) {
-        for (const base of data.bases || []) {
+        for (const base of payload.bases || []) {
           const label = base.guild || "拠点";
           markerParts.push(
             `<button type="button" class="worldmap-marker base" style="left:${base.left}%;top:${base.top}%" title="${esc(label)}" aria-label="${esc(label)}"></button>`
@@ -833,12 +840,14 @@
       }
       markersEl.innerHTML = markerParts.join("");
 
-      playerList.innerHTML = (data.players || []).map((player) => {
+      playerList.innerHTML = (payload.players || []).map((player) => {
         const label = player.name || player.user_id || player.player_id || "プレイヤー";
-        return `<li>${esc(label)} <span class="muted">Lv${player.level}</span></li>`;
+        const noPos = player.left == null || player.top == null;
+        const posNote = noPos ? " <span class='muted'>(位置不明)</span>" : "";
+        return `<li>${esc(label)} <span class="muted">Lv${player.level}</span>${posNote}</li>`;
       }).join("") || "<li class='muted'>オンラインのプレイヤーはありません</li>";
 
-      baseList.innerHTML = (data.bases || []).map((base) =>
+      baseList.innerHTML = (payload.bases || []).map((base) =>
         `<li>${esc(base.guild || "ギルド")}</li>`
       ).join("") || "<li class='muted'>拠点データがありません</li>";
     }
@@ -861,10 +870,10 @@
       refreshMap().catch(() => {});
     });
     document.getElementById("map-layer-players").addEventListener("change", () => {
-      refreshMap().catch(() => {});
+      renderMap();
     });
     document.getElementById("map-layer-bases").addEventListener("change", () => {
-      refreshMap().catch(() => {});
+      renderMap();
     });
 
     document.getElementById("steamcmd-install").addEventListener("click", async () => {

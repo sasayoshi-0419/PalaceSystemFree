@@ -7,8 +7,10 @@ from aiohttp.test_utils import TestClient, TestServer
 from palworld_admin.runtime import AdminRuntime
 from palworld_admin.web import create_app
 from palworld_admin.worldmap import (
+    _copy_sav_for_read,
     extract_bases_from_world_save,
     get_bases_for_operator,
+    map_player_to_dict,
     parse_map_players,
     world_to_paldex,
 )
@@ -81,6 +83,53 @@ def test_parse_map_players_keeps_locations_drops_ip() -> None:
     assert "ip" not in dumped
 
 
+def test_parse_map_players_without_location() -> None:
+    players = parse_map_players(
+        {
+            "players": [
+                {
+                    "name": "Bob",
+                    "playerId": "p2",
+                    "userId": "steam_2",
+                    "level": 5,
+                    "ip": "203.0.113.9",
+                }
+            ]
+        }
+    )
+    assert len(players) == 1
+    assert players[0].name == "Bob"
+    assert players[0].left is None
+    assert players[0].top is None
+    dumped = map_player_to_dict(players[0])
+    assert "left" not in dumped
+    assert "top" not in dumped
+    assert "ip" not in dumped
+
+
+def test_copy_sav_for_read_keeps_single_cache_file(tmp_path: Path) -> None:
+    data_dir = tmp_path / ".data"
+    server_id = "main"
+    source = tmp_path / "Level.sav"
+    source.write_bytes(b"level sav bytes")
+    cache_dir = data_dir / "worldmap_cache"
+    cache_dir.mkdir(parents=True)
+    stale = cache_dir / f"{server_id}-1234567890.sav"
+    stale.write_bytes(b"stale copy")
+
+    dest = _copy_sav_for_read(source, data_dir, server_id)
+    assert dest == cache_dir / f"{server_id}.sav"
+    assert dest.is_file()
+    assert not stale.exists()
+    sav_files = list(cache_dir.glob("*.sav"))
+    assert sav_files == [dest]
+
+    # Same mtime should not create another file
+    again = _copy_sav_for_read(source, data_dir, server_id)
+    assert again == dest
+    assert list(cache_dir.glob("*.sav")) == [dest]
+
+
 def test_extract_bases_from_synthetic_world_save() -> None:
     group_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     base_id = "11111111-2222-3333-4444-555555555555"
@@ -127,6 +176,50 @@ def test_extract_bases_from_synthetic_world_save() -> None:
     assert bases[0].guild == "テストギルド"
     assert bases[0].left > 0
     assert bases[0].top > 0
+
+
+def test_extract_bases_guild_via_base_ids_without_group_id() -> None:
+    group_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    base_id = "11111111-2222-3333-4444-555555555555"
+    world_save = {
+        "GroupSaveDataMap": {
+            "value": [
+                {
+                    "key": group_id,
+                    "value": {
+                        "GroupType": {"value": {"value": "EPalGroupType::Guild"}},
+                        "RawData": {
+                            "value": {
+                                "group_id": group_id,
+                                "guild_name": "base_ids ギルド",
+                                "base_ids": [base_id],
+                            }
+                        },
+                    },
+                }
+            ]
+        },
+        "BaseCampSaveData": {
+            "value": [
+                {
+                    "key": base_id,
+                    "value": {
+                        "RawData": {
+                            "value": {
+                                "id": base_id,
+                                "transform": {
+                                    "translation": {"x": -167230.0, "y": 96430.0, "z": 0.0}
+                                },
+                            }
+                        }
+                    },
+                }
+            ]
+        },
+    }
+    bases = extract_bases_from_world_save(world_save)
+    assert len(bases) == 1
+    assert bases[0].guild == "base_ids ギルド"
 
 
 def test_missing_sav_sets_bases_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
