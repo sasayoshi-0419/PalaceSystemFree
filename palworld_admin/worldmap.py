@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from palworld_discord_bot.operations import ServerOperator
-from palworld_discord_bot.palworld import PalworldAPIError, PalworldClient
+from palworld_discord_bot.palworld import PalworldAPIError
 
 logger = logging.getLogger(__name__)
 

@@ -224,10 +224,17 @@
 
     let mapPollTimer = null;
     let mapLastPayload = null;
+    let mapPanelActive = false;
 
     async function activateMapPanel() {
       await loadMapServers();
+      if (!mapPanelActive) return;
       await refreshMap();
+      if (!mapPanelActive) return;
+      if (mapPollTimer) {
+        clearInterval(mapPollTimer);
+        mapPollTimer = null;
+      }
       mapPollTimer = setInterval(() => { refreshMap().catch(() => {}); }, 8000);
     }
 
@@ -236,6 +243,7 @@
         clearInterval(mapPollTimer);
         mapPollTimer = null;
       }
+      mapPanelActive = name === "map";
       document.querySelectorAll("[data-nav]").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.nav === name);
       });
