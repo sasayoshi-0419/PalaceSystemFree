@@ -16,7 +16,7 @@ from palworld_discord_bot.formatting import (
     presence_text,
 )
 from palworld_discord_bot.models import ServerSnapshot
-from palworld_discord_bot.monitor import diff_snapshots
+from palworld_discord_bot.monitor import diff_snapshots, stabilize_snapshots
 from palworld_discord_bot.palworld import PalworldAPIError
 
 if TYPE_CHECKING:
@@ -31,6 +31,7 @@ class StatusCog(commands.Cog):
         self.store = StatusMessageStore(bot.config.data_dir / "status_message.json")
         self._previous: dict[str, ServerSnapshot] | None = None
         self._latest: dict[str, ServerSnapshot] = {}
+        self._stabilizer_state = None
         self._lock = asyncio.Lock()
 
     async def cog_load(self) -> None:
@@ -129,11 +130,17 @@ class StatusCog(commands.Cog):
         self.poll_servers.change_interval(seconds=self._discord().poll_interval_seconds)
         try:
             async with self._lock:
-                current = await self._poll()
-                diff = diff_snapshots(self._previous, current)
-                self._previous = current
-                self._latest = current
-                snapshots = [current[server.id] for server in self.bot.config.servers]
+                raw = await self._poll()
+                self._stabilizer_state, logical, diff_baseline, next_previous = stabilize_snapshots(
+                    self._stabilizer_state,
+                    self._previous,
+                    raw,
+                    poll_interval_seconds=self._discord().poll_interval_seconds,
+                )
+                diff = diff_snapshots(diff_baseline, logical)
+                self._previous = next_previous
+                self._latest = logical
+                snapshots = [logical[server.id] for server in self.bot.config.servers]
                 await self._update_status_message(snapshots)
                 await self._update_presence(snapshots)
                 await self._notify(diff.events)

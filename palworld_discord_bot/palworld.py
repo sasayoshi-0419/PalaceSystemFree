@@ -1,16 +1,26 @@
 from __future__ import annotations
 
+import errno
 from typing import Any, Literal
 
 import httpx
 
 from palworld_discord_bot.models import Player, ServerInfo, ServerMetrics, ServerSnapshot
 
+ErrorKind = Literal["timeout", "refused", "http", "auth", "other"]
+
 
 class PalworldAPIError(RuntimeError):
-    def __init__(self, message: str, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        *,
+        kind: ErrorKind = "other",
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
+        self.kind = kind
 
 
 def _as_int(value: Any) -> int | None:
@@ -27,6 +37,32 @@ def _as_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+_WSAECONNREFUSED = getattr(errno, "WSAECONNREFUSED", 10061)
+
+
+def _is_errno_connection_refused(err: int | None) -> bool:
+    return err in (errno.ECONNREFUSED, _WSAECONNREFUSED)
+
+
+def _exception_denotes_refused(exc: BaseException) -> bool:
+    if isinstance(exc, ConnectionRefusedError):
+        return True
+    if isinstance(exc, OSError) and _is_errno_connection_refused(exc.errno):
+        return True
+    return False
+
+
+def _is_connection_refused(exc: BaseException) -> bool:
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if _exception_denotes_refused(current):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def parse_info(payload: dict[str, Any]) -> ServerInfo:
@@ -97,19 +133,41 @@ class PalworldClient:
     async def _get(self, path: str) -> Any:
         try:
             response = await self._client.get(path)
+        except httpx.TimeoutException as exc:
+            raise PalworldAPIError(
+                f"REST API がタイムアウトしました: {exc}",
+                kind="timeout",
+            ) from exc
+        except httpx.ConnectError as exc:
+            kind: ErrorKind = "refused" if _is_connection_refused(exc) else "other"
+            raise PalworldAPIError(
+                f"REST API に接続できません: {exc}",
+                kind=kind,
+            ) from exc
         except httpx.HTTPError as exc:
-            raise PalworldAPIError(f"REST API に接続できません: {exc}") from exc
+            raise PalworldAPIError(
+                f"REST API に接続できません: {exc}",
+                kind="other",
+            ) from exc
         if response.status_code == 401:
-            raise PalworldAPIError("REST API の認証に失敗しました", status_code=401)
+            raise PalworldAPIError(
+                "REST API の認証に失敗しました",
+                status_code=401,
+                kind="auth",
+            )
         if response.is_error:
             raise PalworldAPIError(
                 f"REST API が {response.status_code} を返しました",
                 status_code=response.status_code,
+                kind="http",
             )
         try:
             return response.json()
         except ValueError as exc:
-            raise PalworldAPIError("REST API の応答が JSON ではありません") from exc
+            raise PalworldAPIError(
+                "REST API の応答が JSON ではありません",
+                kind="other",
+            ) from exc
 
     async def info(self) -> ServerInfo:
         payload = await self._get("/info")
@@ -132,14 +190,33 @@ class PalworldClient:
     async def _post(self, path: str, json_body: dict[str, Any] | None = None) -> None:
         try:
             response = await self._client.post(path, json=json_body)
+        except httpx.TimeoutException as exc:
+            raise PalworldAPIError(
+                f"REST API がタイムアウトしました: {exc}",
+                kind="timeout",
+            ) from exc
+        except httpx.ConnectError as exc:
+            kind = "refused" if _is_connection_refused(exc) else "other"
+            raise PalworldAPIError(
+                f"REST API に接続できません: {exc}",
+                kind=kind,
+            ) from exc
         except httpx.HTTPError as exc:
-            raise PalworldAPIError(f"REST API に接続できません: {exc}") from exc
+            raise PalworldAPIError(
+                f"REST API に接続できません: {exc}",
+                kind="other",
+            ) from exc
         if response.status_code == 401:
-            raise PalworldAPIError("REST API の認証に失敗しました", status_code=401)
+            raise PalworldAPIError(
+                "REST API の認証に失敗しました",
+                status_code=401,
+                kind="auth",
+            )
         if response.is_error:
             raise PalworldAPIError(
                 f"REST API が {response.status_code} を返しました ({path})",
                 status_code=response.status_code,
+                kind="http",
             )
 
     async def announce(self, message: str) -> None:
@@ -169,22 +246,39 @@ class PalworldClient:
     async def snapshot(self, server_id: str, display_name: str, join_info: str = "") -> ServerSnapshot:
         try:
             info = await self.info()
-            metrics = await self.metrics()
-            players = await self.players()
         except PalworldAPIError as exc:
             return ServerSnapshot(
                 server_id=server_id,
                 display_name=display_name,
                 online=False,
                 error=str(exc),
+                error_kind=exc.kind,
                 join_info=join_info,
             )
+
+        errors: list[str] = []
+        metrics: ServerMetrics | None = None
+        try:
+            metrics = await self.metrics()
+        except PalworldAPIError as exc:
+            errors.append(str(exc))
+
+        players: tuple[Player, ...] = ()
+        players_incomplete = False
+        try:
+            players = await self.players()
+        except PalworldAPIError as exc:
+            players_incomplete = True
+            errors.append(str(exc))
+
         return ServerSnapshot(
             server_id=server_id,
             display_name=display_name,
             online=True,
+            error="; ".join(errors) if errors else None,
             info=info,
             metrics=metrics,
             players=players,
+            players_incomplete=players_incomplete,
             join_info=join_info,
         )
