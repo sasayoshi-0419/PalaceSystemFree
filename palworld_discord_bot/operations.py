@@ -24,6 +24,7 @@ from palworld_discord_bot.settings_ini import (
     set_settings,
     write_settings_file,
 )
+from palworld_discord_bot.user_stop import clear_user_stopped, mark_user_stopped
 
 Progress = Callable[[str], Awaitable[None]]
 
@@ -94,6 +95,7 @@ class ServerOperator:
             return await self._start_unlocked(report)
 
     async def _start_unlocked(self, report: Progress) -> str:
+        clear_user_stopped(self.data_dir, self.server.id)
         controller = self._require_process()
         state = await self.probe()
         if state == "online":
@@ -123,6 +125,7 @@ class ServerOperator:
         report = progress or _noop_progress
         async with self.lock:
             await self._stop_unlocked(wait_seconds, message, report)
+            mark_user_stopped(self.data_dir, self.server.id)
 
     async def _stop_unlocked(self, wait_seconds: int, message: str, report: Progress) -> None:
         timeout = self.server.process.stop_timeout_seconds if self.server.process else 90

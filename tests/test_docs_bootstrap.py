@@ -31,6 +31,7 @@ def test_bootstrap_skill_points_at_public_docs_only() -> None:
 def test_private_studio_docs_are_not_shipped() -> None:
     assert not (ROOT / "docs" / "handoff.md").exists()
     assert not (ROOT / "docs" / "product-notes.md").exists()
+    assert not (ROOT / "homeserver_paid").exists()
 
 
 def test_readme_has_no_internal_memo_links() -> None:
