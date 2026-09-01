@@ -10,6 +10,7 @@ from palworld_discord_bot.operations import OperationError, ServerOperator
 from palworld_discord_bot.process import pid_is_alive
 from palworld_discord_bot.settings_ini import load_settings_file, write_settings_file, set_setting
 from palworld_discord_bot.steamcmd import save_stored_path
+from palworld_discord_bot.user_stop import marker_path
 
 
 class FakeClient:
@@ -220,3 +221,94 @@ async def test_update_with_steamcmd_can_skip_restart(tmp_path: Path) -> None:
     assert called["n"] == 1
     assert "起動はしていません" in message
     assert not (tmp_path / "backups").exists()
+    assert not marker_path(tmp_path, "main").exists()
+
+
+def _operator_with_fast_wait(tmp_path: Path, *, online: bool) -> tuple[ServerOperator, FakeClient]:
+    server = _server(tmp_path)
+    client = FakeClient(online=online)
+    operator = ServerOperator(server, client, tmp_path)  # type: ignore[arg-type]
+
+    async def wait_until(online_flag: bool, timeout: int) -> None:
+        client.online = online_flag
+
+    operator.wait_until = wait_until  # type: ignore[method-assign]
+    return operator, client
+
+
+def _cleanup_operator(operator: ServerOperator) -> None:
+    if operator.process and operator.process.read_pid():
+        operator.process.terminate()
+
+
+@pytest.mark.asyncio
+async def test_stop_writes_user_stopped_marker(tmp_path: Path) -> None:
+    operator, client = _operator_with_fast_wait(tmp_path, online=True)
+    marker = marker_path(tmp_path, "main")
+    await operator.stop(wait_seconds=0)
+    assert marker.is_file()
+    assert client.saved
+    _cleanup_operator(operator)
+
+
+@pytest.mark.asyncio
+async def test_start_clears_user_stopped_marker(tmp_path: Path) -> None:
+    operator, client = _operator_with_fast_wait(tmp_path, online=False)
+    marker = marker_path(tmp_path, "main")
+    marker.write_text("stale", encoding="utf-8")
+    await operator.start()
+    assert not marker.exists()
+    assert operator.process is not None
+    assert operator.process.read_pid() is not None
+    _cleanup_operator(operator)
+
+
+@pytest.mark.asyncio
+async def test_start_when_already_online_clears_user_stopped_marker(tmp_path: Path) -> None:
+    operator, _client = _operator_with_fast_wait(tmp_path, online=True)
+    marker = marker_path(tmp_path, "main")
+    marker.write_text("stale", encoding="utf-8")
+    message = await operator.start()
+    assert "すでに起動" in message
+    assert not marker.exists()
+    _cleanup_operator(operator)
+
+
+@pytest.mark.asyncio
+async def test_restart_does_not_leave_user_stopped_marker(tmp_path: Path) -> None:
+    operator, client = _operator_with_fast_wait(tmp_path, online=True)
+    marker = marker_path(tmp_path, "main")
+    await operator.restart(wait_seconds=0)
+    assert not marker.exists()
+    assert client.saved
+    _cleanup_operator(operator)
+
+
+@pytest.mark.asyncio
+async def test_failed_stop_does_not_write_user_stopped_marker(tmp_path: Path) -> None:
+    operator, _client = _operator_with_fast_wait(tmp_path, online=True)
+    marker = marker_path(tmp_path, "main")
+
+    async def wait_until(online: bool, timeout: int) -> None:
+        raise OperationError("timeout")
+
+    operator.wait_until = wait_until  # type: ignore[method-assign]
+    with pytest.raises(OperationError, match="timeout"):
+        await operator.stop(wait_seconds=0)
+    assert not marker.exists()
+    _cleanup_operator(operator)
+
+
+@pytest.mark.asyncio
+async def test_steamcmd_update_does_not_write_user_stopped_marker(tmp_path: Path) -> None:
+    operator, _client = _operator_with_fast_wait(tmp_path, online=True)
+    steam = tmp_path / "steamcmd"
+    steam.write_bytes(b"x")
+    save_stored_path(tmp_path, steam)
+
+    async def updater(executable: Path, install_dir: Path, progress=None) -> None:
+        return None
+
+    await operator.update_with_steamcmd(wait_seconds=0, backup=False, updater=updater)
+    assert not marker_path(tmp_path, "main").exists()
+    _cleanup_operator(operator)
