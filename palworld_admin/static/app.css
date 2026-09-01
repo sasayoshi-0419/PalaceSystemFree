@@ -686,7 +686,8 @@ th, td {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  background: #07131c;
+  background: #071821;
+  box-shadow: inset 0 0 42px rgba(0, 0, 0, 0.38);
 }
 
 .worldmap-svg {
@@ -696,6 +697,7 @@ th, td {
   height: 100%;
   pointer-events: none;
   z-index: 0;
+  shape-rendering: geometricPrecision;
 }
 
 .worldmap-markers {

@@ -304,6 +304,10 @@ def test_index_html_map_svg_silhouette() -> None:
     assert "worldmap-main" in html
     land_shapes = stage_block.count('class="worldmap-land')
     assert land_shapes >= 3
+    main_idx = stage_block.index("worldmap-land--main")
+    d_idx = stage_block.index('d="', main_idx)
+    d_end = stage_block.index('"', d_idx + 3)
+    assert stage_block[d_idx:d_end].count("L") >= 200
 
 
 def test_index_html_map_has_no_external_map_assets() -> None:
